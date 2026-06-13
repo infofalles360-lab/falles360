@@ -1,10 +1,8 @@
-const SHELL_CACHE = "falles360-shell-v32";
-const RUNTIME_CACHE = "falles360-runtime-v32";
+const SHELL_CACHE = "falles360-shell-v33";
+const RUNTIME_CACHE = "falles360-runtime-v33";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./guest.php",
-  "./login.php",
   "./manifest.webmanifest",
   "./icons/icon-192.png",
   "./icons/icon-512.png",

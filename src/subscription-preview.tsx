@@ -68,8 +68,11 @@ function isBuiltFromDist() {
 function SubscriptionPreviewPage() {
   const plan = useMemo(() => planCatalog[getPlanSlug()], []);
   const builtFromDist = isBuiltFromDist();
-  const loginHref = builtFromDist ? "../login.php" : "./login.php";
-  const appHref = builtFromDist ? "../guest.php" : "./guest.php";
+  const whitelistHref = "https://infofalles360-lab.github.io/fallas360-whitelist/";
+  const isGitHubPages =
+    typeof window !== "undefined" && window.location.hostname.endsWith("github.io");
+  const loginHref = isGitHubPages ? whitelistHref : builtFromDist ? "../login.php" : "./login.php";
+  const appHref = isGitHubPages ? whitelistHref : builtFromDist ? "../guest.php" : "./guest.php";
   const plansHref = "./index.html#plans";
 
   const steps = [

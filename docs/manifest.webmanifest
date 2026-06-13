@@ -1,10 +1,10 @@
 {
-  "id": "../guest.php",
+  "id": "./index.html",
   "name": "Falles360",
   "short_name": "Falles360",
   "description": "Mapa, agenda, rutas y acceso invitado para preparar Fallas 2027 con ventaja.",
-  "start_url": "../guest.php",
-  "scope": "../",
+  "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#fff8f2",

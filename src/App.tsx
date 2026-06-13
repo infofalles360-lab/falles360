@@ -1656,14 +1656,32 @@ export default function App() {
   const [installMessage, setInstallMessage] = useState<string | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<PlanCard | null>(null);
   const staticReveal = useStaticRevealOnMobile();
+  const whitelistHref = "https://infofalles360-lab.github.io/fallas360-whitelist/";
 
   const isBuiltFromDist =
     typeof window !== "undefined" && window.location.pathname.includes("/dist/");
-  const loginHref = isBuiltFromDist ? "../login.php" : "./login.php";
-  const appHref = isBuiltFromDist ? "../guest.php" : "./guest.php";
-  const businessHref = isBuiltFromDist ? "../business-proposal.php" : "./business-proposal.php";
-  const newsletterEndpoint = isBuiltFromDist ? "../api/newsletter.php" : "./api/newsletter.php";
-  const whitelistHref = "https://infofalles360-lab.github.io/fallas360-whitelist/";
+  const isGitHubPages =
+    typeof window !== "undefined" && window.location.hostname.endsWith("github.io");
+  const loginHref = isGitHubPages
+    ? whitelistHref
+    : isBuiltFromDist
+      ? "../login.php"
+      : "./login.php";
+  const appHref = isGitHubPages
+    ? whitelistHref
+    : isBuiltFromDist
+      ? "../guest.php"
+      : "./guest.php";
+  const businessHref = isGitHubPages
+    ? whitelistHref
+    : isBuiltFromDist
+      ? "../business-proposal.php"
+      : "./business-proposal.php";
+  const newsletterEndpoint = isGitHubPages
+    ? ""
+    : isBuiltFromDist
+      ? "../api/newsletter.php"
+      : "./api/newsletter.php";
   const subscriptionPreviewBaseHref = isBuiltFromDist ? "./subscription-preview.html" : "./subscription-preview.html";
 
   useEffect(() => {
@@ -2359,7 +2377,7 @@ export default function App() {
       </main>
 
       <BackToTop />
-      <NewsletterPopup endpoint={newsletterEndpoint} />
+      {newsletterEndpoint ? <NewsletterPopup endpoint={newsletterEndpoint} /> : null}
       {selectedPlan ? (
         <SubscriptionFlowModal
           plan={selectedPlan}

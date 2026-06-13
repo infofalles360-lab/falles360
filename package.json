@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --port=3000 --host=127.0.0.1",
     "build": "vite build",
+    "build:pages": "vite build && node ./scripts/build-pages-docs.mjs",
     "build:whitelist-pages": "vite build && node ./scripts/build-whitelist-pages.mjs",
     "test:whitelist-burst": "node ./scripts/whitelist-burst.mjs",
     "preview": "vite preview",
