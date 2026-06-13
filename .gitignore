@@ -6,6 +6,7 @@ coverage/
 *.log
 .env*
 !.env.example
+!.env.local.example
 backups/
 *.zip
 *.7z
@@ -33,3 +34,5 @@ outputs/
 spreadsheet-work/
 github-upload-flat/
 github-pages-whitelist/
+__pycache__/
+*.pyc
