@@ -1,0 +1,5 @@
+{
+  "name": "Falles360",
+  "description": "Explora las Fallas de Valencia con un mapa interactivo, agenda de eventos y guía completa de monumentos.",
+  "requestFramePermissions": ["geolocation"]
+}

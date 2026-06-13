@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS `marketplace_leads` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `business_name` VARCHAR(190) NOT NULL,
+  `contact_name` VARCHAR(190) NOT NULL,
+  `email` VARCHAR(190) NOT NULL,
+  `phone` VARCHAR(60) DEFAULT '',
+  `business_type` VARCHAR(90) DEFAULT '',
+  `location` VARCHAR(160) DEFAULT '',
+  `proposal_type` VARCHAR(90) DEFAULT '',
+  `message` TEXT NULL,
+  `source` VARCHAR(90) DEFAULT 'landing',
+  `status` VARCHAR(30) NOT NULL DEFAULT 'new',
+  `admin_notes` TEXT NULL,
+  `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_marketplace_leads_status` (`status`),
+  KEY `idx_marketplace_leads_email` (`email`),
+  KEY `idx_marketplace_leads_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

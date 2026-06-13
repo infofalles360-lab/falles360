@@ -1,0 +1,31 @@
+{
+  "id": "../guest.php",
+  "name": "Falles360",
+  "short_name": "Falles360",
+  "description": "Mapa, agenda, rutas y acceso invitado para preparar Fallas 2027 con ventaja.",
+  "start_url": "../guest.php",
+  "scope": "../",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fff8f2",
+  "theme_color": "#ff7a00",
+  "lang": "es",
+  "icons": [
+    {
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

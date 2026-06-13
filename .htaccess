@@ -1,0 +1,22 @@
+Options -Indexes
+
+# El dashboard recarga su propia SPA dentro de un iframe same-origin para la
+# previsualizacion responsive. Todo lo demas sigue bloqueado frente a framing.
+SetEnvIfNoCase Request_URI "/dashboard/dist(?:/index\.html)?/?$" FALLASGO_DASHBOARD_FRAME_OK=1
+
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always unset X-Frame-Options
+    Header always set X-Frame-Options "DENY" env=!FALLASGO_DASHBOARD_FRAME_OK
+    Header always set X-Frame-Options "SAMEORIGIN" env=FALLASGO_DASHBOARD_FRAME_OK
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Permissions-Policy "geolocation=(self), camera=(), microphone=(), payment=(), usb=(), fullscreen=(self)"
+</IfModule>
+
+RewriteEngine On
+
+# Block direct access to hidden files, secrets, backups and internal directories.
+RewriteRule (^|/)\.(?!well-known/) - [F,L,NC]
+RewriteRule ^(?:backend|config|core|views|actions)(?:/|$) - [F,L,NC]
+RewriteRule ^(?:dashboard/server/runtime|backend/runtime|runtime|storage|backups|sessions)(?:/|$) - [F,L,NC]
+RewriteRule \.(?:env|ini|log|sql|sqlite|bak|zip|7z|tar|gz|tgz|pem|key|crt)$ - [F,L,NC]

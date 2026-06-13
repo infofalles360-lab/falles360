@@ -1,0 +1,23 @@
+<button id="connectTelegramBtn">Conectar Telegram</button>
+
+<script>
+  document.getElementById("connectTelegramBtn").addEventListener("click", async () => {
+    const userId = 123; // aquí pon el ID real del usuario logueado
+
+    const response = await fetch("/api/telegram/link-token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ userId })
+    });
+
+    const data = await response.json();
+
+    if (data.telegramUrl) {
+      window.open(data.telegramUrl, "_blank");
+    } else {
+      alert("No se pudo generar el enlace de Telegram");
+    }
+  });
+</script>

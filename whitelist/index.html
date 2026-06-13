@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="referrer" content="no-referrer" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; img-src 'self' data:; font-src 'self' data: https://fonts.gstatic.com; connect-src https://formsubmit.co; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests"
+    />
+    <title>Whitelist Falles360 | Acceso anticipado</title>
+    <meta
+      name="description"
+      content="Apuntate al acceso anticipado de Falles360 y deja lista tu base para Fallas 2027."
+    />
+    <meta name="robots" content="index,follow" />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="es_ES" />
+    <meta property="og:site_name" content="Falles360" />
+    <meta property="og:title" content="Whitelist Falles360 | Acceso anticipado" />
+    <meta
+      property="og:description"
+      content="Apuntate a la lista de acceso anticipado de Falles360."
+    />
+    <script>
+      window.FALLES360_WAITLIST = {
+        privacyHref: "../privacy.html",
+        landingHref: "../index.html",
+      };
+      if (["localhost", "127.0.0.1", "::1"].includes(window.location.hostname)) {
+        window.FALLES360_WAITLIST.endpoint = "../../api/solicitudes.php";
+        window.FALLES360_WAITLIST.countEndpoint = "../../api/solicitudes.php";
+      }
+    </script>
+    <script src="../waitlist-config.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/whitelist-main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,15 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="512" height="512" rx="64" fill="#FCFCFA"/>
+  <circle cx="256" cy="256" r="204" stroke="#0E6B56" stroke-width="18"/>
+  <g fill="#0E6B56">
+    <path d="M256 92l11 16h19l-14 12 5 18-16-10-16 10 5-18-14-12h19l11-16z"/>
+    <path d="M206 132c14-8 31-12 50-12 19 0 36 4 50 12l18 44c-11 8-20 15-27 22v34c0 29-19 56-41 67l-1 1-1-1c-22-11-41-38-41-67v-34c-7-7-16-14-27-22l20-44zm50 15c-15 0-29 3-41 9l-8 18c7 5 13 10 19 15 4-6 9-11 14-15v91c5 4 10 7 16 10 6-3 11-6 16-10v-91c5 4 10 9 14 15 6-5 12-10 19-15l-8-18c-12-6-26-9-41-9z"/>
+    <path d="M181 323h150v8H181z"/>
+    <path d="M147 355h218v6H147z"/>
+  </g>
+  <g fill="#0E6B56" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">
+    <text x="256" y="388" font-size="46" font-weight="700" letter-spacing="4">FALLA</text>
+    <text x="256" y="431" font-size="38" font-weight="700" letter-spacing="2">CONVENTO</text>
+    <text x="256" y="467" font-size="32" font-weight="700" letter-spacing="2">JERUSALEN</text>
+  </g>
+</svg>

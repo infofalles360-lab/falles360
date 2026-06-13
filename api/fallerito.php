@@ -1,0 +1,1927 @@
+<?php
+declare(strict_types=1);
+
+require_once __DIR__ . '/../core/bootstrap.php';
+require_once __DIR__ . '/fallerito-memory-lib.php';
+require_once __DIR__ . '/fallerito-agent-lib.php';
+
+function fallerito_env(string $key, string $default): string
+{
+    $value = getenv($key);
+    return is_string($value) && trim($value) !== '' ? trim($value) : $default;
+}
+
+function fallerito_string(mixed $value, int $maxLength): string
+{
+    $text = trim((string) $value);
+    $text = preg_replace('/\s+/u', ' ', $text) ?? $text;
+    return mb_substr($text, 0, $maxLength, 'UTF-8');
+}
+
+function fallerito_history(array $items): array
+{
+    $history = [];
+    foreach (array_slice($items, -6) as $item) {
+        if (!is_array($item)) {
+            continue;
+        }
+
+        $from = (string) ($item['from'] ?? '');
+        if (!in_array($from, ['bot', 'user'], true)) {
+            continue;
+        }
+
+        $text = fallerito_string($item['text'] ?? '', 700);
+        if ($text === '') {
+            continue;
+        }
+
+        $history[] = [
+            'role' => $from === 'user' ? 'user' : 'assistant',
+            'content' => $text,
+        ];
+    }
+
+    return $history;
+}
+
+function fallerito_documents(array $items): array
+{
+    $documents = [];
+    foreach (array_slice($items, 0, 3) as $item) {
+        if (!is_array($item)) {
+            continue;
+        }
+
+        $kind = fallerito_string($item['kind'] ?? 'text', 20);
+        $kind = $kind === 'image' ? 'image' : 'text';
+        $name = fallerito_string($item['name'] ?? 'Documento', 120);
+        $type = fallerito_string($item['type'] ?? 'text/plain', 80);
+        $size = max(0, (int) ($item['size'] ?? 0));
+        $text = $kind === 'text' ? fallerito_string($item['text'] ?? '', 8000) : '';
+        $imageBase64 = $kind === 'image' ? preg_replace('/[^A-Za-z0-9+\/=]/', '', (string) ($item['imageBase64'] ?? '')) : '';
+
+        if ($kind === 'text' && $text === '') {
+            continue;
+        }
+
+        if ($kind === 'image' && ($imageBase64 === '' || strlen($imageBase64) > 3500000)) {
+            continue;
+        }
+
+        $documents[] = [
+            'kind' => $kind,
+            'name' => $name !== '' ? $name : 'Documento',
+            'type' => $type !== '' ? $type : 'text/plain',
+            'size' => $size,
+            'text' => $text,
+            'imageBase64' => $imageBase64,
+        ];
+    }
+
+    return $documents;
+}
+
+function fallerito_documents_context(array $documents): string
+{
+    if ($documents === []) {
+        return '';
+    }
+
+    $lines = [
+        'Documentos escaneados por el usuario:',
+        'Usa este contenido como fuente principal cuando la pregunta trate del documento. Si falta un dato, dilo claramente.',
+    ];
+
+    foreach ($documents as $index => $document) {
+        $lines[] = sprintf(
+            '[DOC %d] %s | tipo: %s | tamano: %d bytes | contenido: %s',
+            $index + 1,
+            $document['name'],
+            $document['type'],
+            (int) $document['size'],
+            $document['kind'] === 'image'
+                ? 'Imagen adjunta para analisis visual. Describe texto visible, objetos, contexto y datos utiles sin inventar.'
+                : $document['text']
+        );
+    }
+
+    return implode("\n", $lines) . "\n";
+}
+
+function fallerito_documents_trace_items(array $documents): array
+{
+    return array_map(
+        static fn (array $document): array => [
+            'type' => $document['kind'] === 'image' ? 'imagen' : 'documento',
+            'title' => $document['name'],
+            'source' => $document['kind'] === 'image' ? 'Imagen subida' : 'Documento subido',
+            'score' => 1,
+        ],
+        $documents
+    );
+}
+
+function fallerito_document_images(array $documents): array
+{
+    return array_values(array_filter(
+        array_map(
+            static fn (array $document): string => $document['kind'] === 'image' ? (string) ($document['imageBase64'] ?? '') : '',
+            $documents
+        ),
+        static fn (string $image): bool => $image !== ''
+    ));
+}
+
+function fallerito_app_context(): string
+{
+    return <<<'TXT'
+Eres Fallerito, el asistente de Fallas 360.
+Responde de forma breve, clara y cercana.
+Maximo 4-6 lineas salvo que el usuario pida mas detalle.
+No repitas informacion innecesaria.
+No inventes datos en tiempo real. Si falta un horario exacto, indica que se revise la agenda de la app.
+
+Contexto de la app:
+- Mapa interactivo de fallas con ubicacion, favoritos, fichas y rutas.
+- Agenda de actos, mascletas, ofrenda, crema, castillos y eventos.
+- Pasaporte Fallero con visitas, insignias, niveles y progreso.
+- Marketplace con restaurantes, cupones QR, productos, experiencias y sponsors cerca de la ruta.
+- Avisos del panel: aparecen como popup y al cerrarlos quedan arriba como indicador.
+- Telegram permite recibir avisos y novedades si el usuario lo vincula.
+- El panel admin gestiona comisiones, eventos, galeria, sponsors, avisos y aprobaciones.
+- Puede analizar documentos de texto, capturas y fotos subidas por el usuario cuando se adjuntan al chat.
+
+Reglas:
+- Prioriza acciones dentro de la app: mapa, agenda, marketplace, perfil, pasaporte y avisos.
+- Si el mensaje es solo un saludo o una despedida, responde en 1-2 frases y termina con una pregunta util corta.
+- Si la app puede abrir una ruta, una pestaña o una vista concreta, redacta la respuesta para que encaje con el boton que vera el usuario.
+- En preguntas reales, da primero la recomendacion principal y despues explica el criterio en lenguaje natural de forma breve.
+- Si preguntan por cupones, comida o compras, usa solo ofertas reales del Marketplace. Si no hay datos reales, responde exactamente que ahora mismo no hay ofertas disponibles.
+- Si preguntan por transporte, da orientacion practica con Metrovalencia, EMT, Valenbisi, caminar y evitar coche en zonas cortadas. No inventes horarios ni incidencias en tiempo real.
+- Si preguntan por emergencias, recomienda llamar al 112 si hay peligro, y orienta a farmacias, policia, puntos de informacion y transporte desde el mapa o fuentes oficiales.
+- Si preguntan por progreso, visitas o insignias, dirige al Pasaporte/Perfil.
+- Si preguntan por avisos, explica el popup y el indicador superior.
+- No menciones APIs externas ni proveedores.
+TXT;
+}
+
+function fallerito_normalize_search(string $value): string
+{
+    $text = mb_strtolower($value, 'UTF-8');
+    $text = strtr($text, [
+        'á' => 'a', 'à' => 'a', 'ä' => 'a', 'â' => 'a',
+        'é' => 'e', 'è' => 'e', 'ë' => 'e', 'ê' => 'e',
+        'í' => 'i', 'ì' => 'i', 'ï' => 'i', 'î' => 'i',
+        'ó' => 'o', 'ò' => 'o', 'ö' => 'o', 'ô' => 'o',
+        'ú' => 'u', 'ù' => 'u', 'ü' => 'u', 'û' => 'u',
+        'ñ' => 'n', 'ç' => 'c',
+    ]);
+    return preg_replace('/[^a-z0-9\s]+/u', ' ', $text) ?? $text;
+}
+
+function fallerito_falla_line(array $falla): string
+{
+    $name = fallerito_string($falla['name'] ?? '', 90);
+    $category = fallerito_string($falla['category'] ?? '', 40);
+    $section = fallerito_string($falla['section'] ?? $falla['section_name'] ?? '', 60);
+    $neighborhood = fallerito_string($falla['neighborhood'] ?? '', 60);
+    $address = fallerito_string($falla['address'] ?? '', 90);
+    $artist = fallerito_string($falla['artist'] ?? $falla['artist_name'] ?? '', 70);
+    $prize = fallerito_string($falla['prizeText'] ?? $falla['prize_text'] ?? '', 70);
+    $events = (int) ($falla['eventsCount'] ?? $falla['events_count'] ?? 0);
+
+    $parts = array_filter([
+        $name,
+        $category !== '' ? "tipo {$category}" : '',
+        $section !== '' ? "seccion {$section}" : '',
+        $neighborhood !== '' ? "barrio {$neighborhood}" : '',
+        $address !== '' ? "direccion {$address}" : '',
+        $artist !== '' ? "artista {$artist}" : '',
+        $prize !== '' ? "premio {$prize}" : '',
+        $events > 0 ? "{$events} actos" : '',
+    ], static fn (string $part): bool => $part !== '');
+
+    return '- ' . implode(' | ', $parts);
+}
+
+function fallerito_fallas_catalog_context(array $user, string $query): string
+{
+    try {
+        $fallas = app_public_fetch_fallas($user);
+    } catch (Throwable) {
+        return "Catalogo de fallas: no disponible en este momento.\n";
+    }
+
+    if ($fallas === []) {
+        return "Catalogo de fallas: no hay fallas registradas todavia.\n";
+    }
+
+    $normalizedQuery = fallerito_normalize_search($query);
+    $queryWords = array_values(array_filter(
+        preg_split('/\s+/', $normalizedQuery) ?: [],
+        static fn (string $word): bool => mb_strlen($word, 'UTF-8') >= 3
+            && !in_array($word, ['falla', 'fallas', 'dime', 'todas', 'todo', 'ver', 'ruta', 'cerca', 'quiero'], true)
+    ));
+
+    $sections = [];
+    $neighborhoods = [];
+    $categories = [];
+    $matched = [];
+
+    foreach ($fallas as $falla) {
+        $section = fallerito_string($falla['section'] ?? $falla['section_name'] ?? '', 60);
+        $neighborhood = fallerito_string($falla['neighborhood'] ?? '', 60);
+        $category = fallerito_string($falla['category'] ?? '', 40);
+        if ($section !== '') {
+            $sections[$section] = ($sections[$section] ?? 0) + 1;
+        }
+        if ($neighborhood !== '') {
+            $neighborhoods[$neighborhood] = ($neighborhoods[$neighborhood] ?? 0) + 1;
+        }
+        if ($category !== '') {
+            $categories[$category] = ($categories[$category] ?? 0) + 1;
+        }
+
+        if ($queryWords === []) {
+            continue;
+        }
+
+        $haystack = fallerito_normalize_search(implode(' ', [
+            $falla['name'] ?? '',
+            $falla['category'] ?? '',
+            $falla['section'] ?? $falla['section_name'] ?? '',
+            $falla['neighborhood'] ?? '',
+            $falla['address'] ?? '',
+            $falla['artist'] ?? $falla['artist_name'] ?? '',
+            $falla['description'] ?? '',
+            $falla['prizeText'] ?? '',
+        ]));
+
+        $score = 0;
+        foreach ($queryWords as $word) {
+            if (str_contains($haystack, $word)) {
+                $score++;
+            }
+        }
+
+        if ($score > 0) {
+            $matched[] = ['score' => $score, 'falla' => $falla];
+        }
+    }
+
+    arsort($sections);
+    arsort($neighborhoods);
+    arsort($categories);
+    usort($matched, static fn (array $left, array $right): int => $right['score'] <=> $left['score']);
+
+    $wantsAll = str_contains($normalizedQuery, 'todas') || str_contains($normalizedQuery, 'todo') || str_contains($normalizedQuery, 'lista');
+    $fullLimit = $wantsAll ? 260 : 180;
+    $summary = [
+        'Catalogo real de fallas disponible para Fallerito:',
+        '- Total cargadas: ' . count($fallas),
+        '- Tipos: ' . implode(', ', array_map(static fn (string $key, int $count): string => "{$key} ({$count})", array_keys($categories), $categories)),
+        '- Secciones principales: ' . implode(', ', array_slice(array_map(static fn (string $key, int $count): string => "{$key} ({$count})", array_keys($sections), $sections), 0, 12)),
+        '- Barrios principales: ' . implode(', ', array_slice(array_map(static fn (string $key, int $count): string => "{$key} ({$count})", array_keys($neighborhoods), $neighborhoods), 0, 14)),
+    ];
+
+    $matchedLines = array_map(
+        static fn (array $item): string => fallerito_falla_line($item['falla']),
+        array_slice($matched, 0, 45)
+    );
+
+    $catalogLines = array_map(
+        static fn (array $falla): string => fallerito_falla_line($falla),
+        array_slice($fallas, 0, $fullLimit)
+    );
+
+    return implode("\n", $summary)
+        . "\n\nCoincidencias con la pregunta:\n"
+        . ($matchedLines !== [] ? implode("\n", $matchedLines) : '- Sin coincidencias directas; usa el catalogo completo.')
+        . "\n\nCatalogo compacto de fallas:\n"
+        . implode("\n", $catalogLines)
+        . (count($fallas) > $fullLimit ? "\n- Hay mas fallas en la base de datos; si el usuario pide una zona/nombre concreto, busca por coincidencia en este catalogo." : '')
+        . "\n";
+}
+
+function fallerito_query_words(string $query): array
+{
+    $normalizedQuery = fallerito_normalize_search($query);
+    return array_values(array_filter(
+        preg_split('/\s+/', $normalizedQuery) ?: [],
+        static fn (string $word): bool => mb_strlen($word, 'UTF-8') >= 3
+            && !in_array($word, [
+                'falla', 'fallas', 'dime', 'todas', 'todo', 'ver', 'ruta', 'cerca', 'quiero',
+                'comer', 'comida', 'oferta', 'ofertas', 'para', 'como', 'donde', 'cuando',
+                'cual', 'cuales', 'sobre', 'info', 'informacion', 'necesito',
+            ], true)
+    ));
+}
+
+function fallerito_rag_score(array $queryWords, string $text): int
+{
+    if ($queryWords === []) {
+        return 0;
+    }
+
+    $haystack = fallerito_normalize_search($text);
+    $score = 0;
+    foreach ($queryWords as $word) {
+        if (str_contains($haystack, $word)) {
+            $score += 2;
+        }
+        $score += substr_count($haystack, $word);
+    }
+
+    return $score;
+}
+
+function fallerito_rag_add(array &$items, string $type, string $title, string $text, string $source, int $score): void
+{
+    $title = fallerito_string($title, 140);
+    $text = fallerito_string($text, 520);
+    $source = fallerito_string($source, 160);
+    if ($title === '' || $text === '') {
+        return;
+    }
+
+    $items[] = [
+        'type' => $type,
+        'title' => $title,
+        'text' => $text,
+        'source' => $source,
+        'score' => $score,
+    ];
+}
+
+function fallerito_rag_fallas(array $user, array $queryWords): array
+{
+    try {
+        $fallas = app_public_fetch_fallas($user);
+    } catch (Throwable) {
+        return [];
+    }
+
+    $items = [];
+    foreach ($fallas as $falla) {
+        $text = implode(' | ', array_filter([
+            $falla['name'] ?? '',
+            $falla['category'] ?? '',
+            $falla['section'] ?? $falla['section_name'] ?? '',
+            $falla['neighborhood'] ?? '',
+            $falla['address'] ?? '',
+            $falla['artist'] ?? $falla['artist_name'] ?? '',
+            $falla['description'] ?? '',
+            $falla['prizeText'] ?? $falla['prize_text'] ?? '',
+        ], static fn (mixed $part): bool => trim((string) $part) !== ''));
+        $score = fallerito_rag_score($queryWords, $text);
+        if ($score <= 0) {
+            continue;
+        }
+
+        fallerito_rag_add(
+            $items,
+            'falla',
+            (string) ($falla['name'] ?? 'Falla'),
+            fallerito_falla_line($falla),
+            'Catalogo de fallas',
+            $score
+        );
+    }
+
+    return $items;
+}
+
+function fallerito_rag_events(array $queryWords): array
+{
+    $rows = dashboard_fetch_all(
+        'SELECT events.title, events.description, events.event_date, events.start_time, events.end_time,
+                events.location_name, events.address, event_categories.name AS category_name
+         FROM events
+         LEFT JOIN event_categories ON event_categories.id = events.category_id
+         WHERE events.status IN ("scheduled", "published")
+         ORDER BY events.event_date ASC, COALESCE(events.start_time, "00:00:00") ASC
+         LIMIT 120'
+    );
+
+    $items = [];
+    foreach ($rows as $row) {
+        $text = implode(' | ', array_filter([
+            $row['title'] ?? '',
+            $row['description'] ?? '',
+            $row['category_name'] ?? '',
+            $row['event_date'] ?? '',
+            $row['start_time'] ?? '',
+            $row['end_time'] ?? '',
+            $row['location_name'] ?? '',
+            $row['address'] ?? '',
+        ], static fn (mixed $part): bool => trim((string) $part) !== ''));
+        $score = fallerito_rag_score($queryWords, $text);
+        if ($score <= 0) {
+            continue;
+        }
+
+        fallerito_rag_add(
+            $items,
+            'evento',
+            (string) ($row['title'] ?? 'Evento'),
+            $text,
+            'Agenda',
+            $score
+        );
+    }
+
+    return $items;
+}
+
+function fallerito_rag_marketplace(array $queryWords): array
+{
+    $sources = [
+        ['negocio', 'marketplace_businesses', 'name', 'CONCAT_WS(" | ", name, type, location, distance, promotion, badge, category)', 'status = "active"'],
+        ['cupon', 'marketplace_coupons', 'title', 'CONCAT_WS(" | ", title, business, condition_text, valid_until)', 'status = "active"'],
+        ['producto', 'marketplace_products', 'name', 'CONCAT_WS(" | ", name, price, category)', 'status = "active"'],
+        ['experiencia', 'marketplace_experiences', 'name', 'CONCAT_WS(" | ", name, description, price, location, duration, capacity, business_name, contact_channel)', 'status = "active"'],
+    ];
+
+    $items = [];
+    foreach ($sources as [$type, $table, $titleColumn, $textExpression, $where]) {
+        $rows = dashboard_fetch_all(
+            "SELECT {$titleColumn} AS rag_title, {$textExpression} AS rag_text
+             FROM {$table}
+             WHERE {$where}
+             ORDER BY updated_at DESC, id DESC
+             LIMIT 40"
+        );
+        foreach ($rows as $row) {
+            $text = (string) ($row['rag_text'] ?? '');
+            $score = fallerito_rag_score($queryWords, $text);
+            if ($score <= 0) {
+                continue;
+            }
+            fallerito_rag_add($items, $type, (string) ($row['rag_title'] ?? $type), $text, 'Marketplace', $score);
+        }
+    }
+
+    return $items;
+}
+
+function fallerito_rag_cendra(string $query, array $queryWords): array
+{
+    try {
+        $articles = cendra_search_articles($query, 10);
+        foreach (array_slice($queryWords, 0, 5) as $word) {
+            foreach (cendra_search_articles($word, 4) as $article) {
+                $articles[] = $article;
+            }
+        }
+    } catch (Throwable) {
+        return [];
+    }
+
+    $items = [];
+    $seen = [];
+    foreach ($articles as $article) {
+        $articleKey = (string) ($article['id'] ?? $article['url'] ?? $article['title'] ?? '');
+        if ($articleKey !== '' && isset($seen[$articleKey])) {
+            continue;
+        }
+        if ($articleKey !== '') {
+            $seen[$articleKey] = true;
+        }
+
+        $text = implode(' | ', array_filter([
+            $article['title'] ?? '',
+            $article['summary'] ?? '',
+            $article['category'] ?? '',
+            $article['author'] ?? '',
+            $article['published_at'] ?? '',
+            $article['url'] ?? '',
+        ], static fn (mixed $part): bool => trim((string) $part) !== ''));
+        $score = max(1, fallerito_rag_score($queryWords, $text));
+        fallerito_rag_add(
+            $items,
+            'articulo',
+            (string) ($article['title'] ?? 'Articulo'),
+            $text,
+            (string) ($article['url'] ?? 'Cendra'),
+            $score
+        );
+    }
+
+    return $items;
+}
+
+function fallerito_rag_documents(array $queryWords): array
+{
+    $root = realpath(__DIR__ . '/..');
+    if (!is_string($root)) {
+        return [];
+    }
+
+    $files = glob($root . DIRECTORY_SEPARATOR . '*.md') ?: [];
+    $items = [];
+    foreach ($files as $file) {
+        if (!is_string($file) || !is_readable($file)) {
+            continue;
+        }
+
+        $raw = file_get_contents($file, false, null, 0, 80000);
+        if (!is_string($raw) || trim($raw) === '') {
+            continue;
+        }
+
+        $chunks = preg_split('/\n(?=#{1,3}\s)|\n{2,}/', $raw) ?: [];
+        foreach ($chunks as $chunk) {
+            $chunk = trim(strip_tags($chunk));
+            if ($chunk === '') {
+                continue;
+            }
+
+            $score = fallerito_rag_score($queryWords, $chunk);
+            if ($score <= 0) {
+                continue;
+            }
+
+            $title = basename($file);
+            if (preg_match('/^#{1,3}\s+(.+)$/m', $chunk, $match) === 1) {
+                $title .= ' - ' . trim($match[1]);
+            }
+            fallerito_rag_add($items, 'documento', $title, $chunk, basename($file), $score);
+        }
+    }
+
+    return $items;
+}
+
+function fallerito_rag_result(array $user, string $query): array
+{
+    $startedAt = microtime(true);
+    $queryWords = fallerito_query_words($query);
+    $baseTrace = [
+        'query' => $query,
+        'keywords' => $queryWords,
+        'sources' => [
+            'fallas' => 0,
+            'agenda' => 0,
+            'marketplace' => 0,
+            'articulos' => 0,
+            'documentos' => 0,
+        ],
+        'items' => [],
+        'duration_ms' => 0,
+        'steps' => [
+            'He leido tu pregunta y he preparado una busqueda segura en los datos locales de Fallas 360.',
+        ],
+    ];
+
+    if ($queryWords === []) {
+        $baseTrace['duration_ms'] = (int) round((microtime(true) - $startedAt) * 1000);
+        $baseTrace['steps'][] = 'No he encontrado palabras clave concretas; usare el contexto general de la app y pedire mas detalle si hace falta.';
+        return [
+            'context' => "Contexto recuperado relevante:\n- Sin busqueda especifica; responde con el contexto general de la app y pide una zona, falla, acto o tema concreto si hace falta.\n",
+            'trace' => $baseTrace,
+        ];
+    }
+
+    $fallasItems = fallerito_rag_fallas($user, $queryWords);
+    $eventItems = fallerito_rag_events($queryWords);
+    $marketplaceItems = fallerito_rag_marketplace($queryWords);
+    $articleItems = fallerito_rag_cendra($query, $queryWords);
+    $documentItems = fallerito_rag_documents($queryWords);
+
+    $items = array_merge($fallasItems, $eventItems, $marketplaceItems, $articleItems, $documentItems);
+
+    usort($items, static fn (array $left, array $right): int => ($right['score'] <=> $left['score']) ?: strcmp($left['title'], $right['title']));
+    $items = array_slice($items, 0, 10);
+
+    $trace = $baseTrace;
+    $trace['sources'] = [
+        'fallas' => count($fallasItems),
+        'agenda' => count($eventItems),
+        'marketplace' => count($marketplaceItems),
+        'articulos' => count($articleItems),
+        'documentos' => count($documentItems),
+    ];
+    $trace['items'] = array_map(
+        static fn (array $item): array => [
+            'type' => $item['type'],
+            'title' => $item['title'],
+            'source' => $item['source'],
+            'score' => $item['score'],
+        ],
+        array_slice($items, 0, 5)
+    );
+    $totalFound = count($fallasItems) + count($eventItems) + count($marketplaceItems) + count($articleItems) + count($documentItems);
+    $sourceLabels = [];
+    foreach ($trace['sources'] as $sourceName => $count) {
+        if ($count > 0) {
+            $sourceLabels[] = "{$sourceName} ({$count})";
+        }
+    }
+    $trace['duration_ms'] = (int) round((microtime(true) - $startedAt) * 1000);
+    $trace['steps'] = [
+        'He leido tu pregunta y he extraido palabras clave: ' . implode(', ', array_slice($queryWords, 0, 6)) . '.',
+        $totalFound > 0
+            ? 'He buscado en fallas, agenda, marketplace, articulos y documentos. Coincidencias: ' . implode(', ', $sourceLabels) . '.'
+            : 'He buscado en fallas, agenda, marketplace, articulos y documentos, pero no hay coincidencias claras.',
+        $items !== []
+            ? 'He seleccionado las fuentes mas relevantes para responder sin inventar datos.'
+            : 'Como no hay fuentes claras, respondere con cautela y te orientare a la seccion adecuada de la app.',
+    ];
+
+    if ($items === []) {
+        return [
+            'context' => "Contexto recuperado relevante:\n- No hay coincidencias claras en fallas, agenda, marketplace, articulos ni documentos locales para esta pregunta.\n",
+            'trace' => $trace,
+        ];
+    }
+
+    $lines = [
+        'Contexto recuperado relevante para responder:',
+        'Usa estos fragmentos como fuente principal. Si no contienen el dato exacto, dilo con naturalidad y orienta al usuario dentro de la app.',
+    ];
+    foreach ($items as $index => $item) {
+        $lines[] = sprintf(
+            '[%d] %s | %s | fuente: %s | %s',
+            $index + 1,
+            $item['type'],
+            $item['title'],
+            $item['source'],
+            $item['text']
+        );
+    }
+
+    return [
+        'context' => implode("\n", $lines) . "\n",
+        'trace' => $trace,
+    ];
+}
+
+function fallerito_rag_context(array $user, string $query): string
+{
+    $result = fallerito_rag_result($user, $query);
+    return (string) ($result['context'] ?? '');
+}
+
+function fallerito_is_marketplace_query(string $message, string $intent): bool
+{
+    $normalized = fallerito_normalize_search($message . ' ' . $intent);
+    return preg_match('/\b(comer|comida|cenar|restaurante|tapas|paella|horchata|bunuelo|bunuelos|cupon|cupones|oferta|ofertas|marketplace|producto|productos|comprar|tienda)\b/u', $normalized) === 1;
+}
+
+function fallerito_is_transport_query(string $message, string $intent): bool
+{
+    $normalized = fallerito_normalize_search($message . ' ' . $intent);
+    return preg_match('/\b(transporte|metro|metrovalencia|emt|bus|autobus|tranvia|taxi|valenbisi|bici|bicicleta|aparcar|parking|coche|llegar|moverme|volver|estacion|tren|renfe)\b/u', $normalized) === 1;
+}
+
+function fallerito_is_emergency_query(string $message, string $intent): bool
+{
+    $normalized = fallerito_normalize_search($message . ' ' . $intent);
+    return preg_match('/\b(emergencia|urgencia|farmacia|farmacias|policia|policia local|ambulancia|hospital|112|perdido|perdida|punto de informacion|puntos de informacion)\b/u', $normalized) === 1;
+}
+
+function fallerito_transport_reply(): string
+{
+    return implode("\n", [
+        "Para moverte por Fallas, prioriza transporte publico y caminar:",
+        "1. Metrovalencia para entrar al centro: Xativa, Colon, Alameda, Angel Guimera o Facultats segun zona.",
+        "2. EMT para aproximarte a barrios, pero revisa desvíos por cortes.",
+        "3. Valenbisi o caminar para tramos cortos cuando haya mucha gente.",
+        "4. Evita coche en el centro: puede haber calles cortadas y poco aparcamiento.",
+        "Pulsa Mapa para ubicarte y combinar la ruta con la falla o evento que quieras ver.",
+    ]);
+}
+
+function fallerito_emergency_reply(): string
+{
+    return implode("\n", [
+        "Si es una emergencia real, llama al 112.",
+        "Para ayuda util cerca de ti: busca farmacias, Policia Local, puntos de informacion y transporte publico desde el mapa.",
+        "Si estas en una zona con mucha gente, sal a una calle amplia, comparte tu ubicacion y evita moverte contra la multitud.",
+        "Puedo ayudarte a abrir el mapa o la agenda para orientarte dentro de la app.",
+    ]);
+}
+
+function fallerito_marketplace_has_active_content(): bool
+{
+    try {
+        $row = dashboard_fetch_row(
+            "SELECT
+                (SELECT COUNT(*) FROM marketplace_businesses WHERE status = 'active') AS businesses_count,
+                (SELECT COUNT(*) FROM marketplace_coupons WHERE status = 'active') AS coupons_count,
+                (SELECT COUNT(*) FROM marketplace_products WHERE status = 'active') AS products_count,
+                (SELECT COUNT(*) FROM marketplace_experiences WHERE status = 'active') AS experiences_count"
+        );
+    } catch (Throwable) {
+        return false;
+    }
+
+    if (!is_array($row)) {
+        return false;
+    }
+
+    return ((int) ($row['businesses_count'] ?? 0)
+        + (int) ($row['coupons_count'] ?? 0)
+        + (int) ($row['products_count'] ?? 0)
+        + (int) ($row['experiences_count'] ?? 0)) > 0;
+}
+
+function fallerito_best_falla_match(array $user, string $query): ?array
+{
+    $queryWords = fallerito_query_words($query);
+    if ($queryWords === []) {
+        return null;
+    }
+
+    try {
+        $fallas = app_public_fetch_fallas($user);
+    } catch (Throwable) {
+        return null;
+    }
+
+    $best = null;
+    $bestScore = 0;
+    foreach ($fallas as $falla) {
+        $haystack = fallerito_normalize_search(implode(' ', [
+            $falla['name'] ?? '',
+            $falla['category'] ?? '',
+            $falla['section'] ?? $falla['section_name'] ?? '',
+            $falla['neighborhood'] ?? '',
+            $falla['address'] ?? '',
+            $falla['artist'] ?? $falla['artist_name'] ?? '',
+            $falla['description'] ?? '',
+            $falla['prizeText'] ?? '',
+        ]));
+
+        $score = 0;
+        foreach ($queryWords as $word) {
+            if (str_contains($haystack, $word)) {
+                $score++;
+            }
+        }
+
+        if ($score > $bestScore) {
+            $bestScore = $score;
+            $best = $falla;
+        }
+    }
+
+    return $bestScore > 0 ? $best : null;
+}
+
+function fallerito_marketplace_context(): string
+{
+    try {
+        $businesses = dashboard_fetch_all(
+            "SELECT name, type, location, distance, promotion, badge, category
+             FROM marketplace_businesses
+             WHERE status = 'active'
+             ORDER BY updated_at DESC, id DESC
+             LIMIT 12"
+        );
+        $coupons = dashboard_fetch_all(
+            "SELECT title, business, condition_text, valid_until
+             FROM marketplace_coupons
+             WHERE status = 'active'
+             ORDER BY updated_at DESC, id DESC
+             LIMIT 12"
+        );
+        $products = dashboard_fetch_all(
+            "SELECT name, price, category
+             FROM marketplace_products
+             WHERE status = 'active'
+             ORDER BY updated_at DESC, id DESC
+             LIMIT 8"
+        );
+        $experiences = dashboard_fetch_all(
+            "SELECT name, description, price, location, duration, capacity, business_name, contact_channel
+             FROM marketplace_experiences
+             WHERE status = 'active'
+             ORDER BY updated_at DESC, id DESC
+             LIMIT 8"
+        );
+    } catch (Throwable) {
+        return "Marketplace real: no disponible en este momento.\n";
+    }
+
+    $lines = ["Marketplace real disponible para Fallerito:"];
+    if ($businesses === [] && $coupons === [] && $products === [] && $experiences === []) {
+        $lines[] = '- No hay ofertas, negocios, cupones, productos ni experiencias publicadas ahora mismo.';
+        return implode("\n", $lines) . "\n";
+    }
+
+    foreach ($businesses as $row) {
+        $parts = array_filter([
+            fallerito_string($row['name'] ?? '', 90),
+            fallerito_string($row['type'] ?? '', 60),
+            fallerito_string($row['location'] ?? '', 80),
+            fallerito_string($row['distance'] ?? '', 40),
+            fallerito_string($row['promotion'] ?? '', 160),
+            fallerito_string($row['badge'] ?? '', 40),
+            fallerito_string($row['category'] ?? '', 60),
+        ], static fn (string $part): bool => $part !== '');
+        $lines[] = '- Negocio: ' . implode(' | ', $parts);
+    }
+    foreach ($coupons as $row) {
+        $parts = array_filter([
+            fallerito_string($row['title'] ?? '', 90),
+            fallerito_string($row['business'] ?? '', 90),
+            fallerito_string($row['condition_text'] ?? '', 160),
+            fallerito_string($row['valid_until'] ?? '', 80),
+        ], static fn (string $part): bool => $part !== '');
+        $lines[] = '- Cupon: ' . implode(' | ', $parts);
+    }
+    foreach ($products as $row) {
+        $lines[] = '- Producto: ' . implode(' | ', array_filter([
+            fallerito_string($row['name'] ?? '', 90),
+            fallerito_string($row['price'] ?? '', 50),
+            fallerito_string($row['category'] ?? '', 70),
+        ], static fn (string $part): bool => $part !== ''));
+    }
+    foreach ($experiences as $row) {
+        $lines[] = '- Experiencia: ' . implode(' | ', array_filter([
+            fallerito_string($row['name'] ?? '', 90),
+            fallerito_string($row['description'] ?? '', 160),
+            fallerito_string($row['price'] ?? '', 50),
+            fallerito_string($row['location'] ?? '', 80),
+            fallerito_string($row['duration'] ?? '', 50),
+            fallerito_string($row['capacity'] ?? '', 50),
+            fallerito_string($row['business_name'] ?? '', 90),
+            fallerito_string($row['contact_channel'] ?? '', 80),
+        ], static fn (string $part): bool => $part !== ''));
+    }
+
+    return implode("\n", $lines) . "\n";
+}
+
+function fallerito_actions(array $user, string $message, string $intent): array
+{
+    $normalized = fallerito_normalize_search($message . ' ' . $intent);
+    $actions = [];
+
+    if (preg_match('/\b(agenda|evento|eventos|horario|horarios|cuando|mascleta|ofrenda|crema|castillo|castillos)\b/u', $normalized) === 1) {
+        $actions[] = [
+            'type' => 'open_tab',
+            'label' => 'Ver agenda',
+            'tab' => 'Agenda',
+        ];
+    }
+
+    if (fallerito_is_marketplace_query($message, $intent)) {
+        $actions[] = [
+            'type' => 'open_marketplace',
+            'label' => 'Ver ofertas del marketplace',
+            'tab' => 'Marketplace',
+        ];
+    }
+
+    if (fallerito_is_transport_query($message, $intent) || fallerito_is_emergency_query($message, $intent)) {
+        $actions[] = [
+            'type' => 'open_tab',
+            'label' => 'Abrir mapa',
+            'tab' => 'Mapa',
+        ];
+    }
+
+    if (fallerito_is_transport_query($message, $intent)) {
+        $actions[] = [
+            'type' => 'open_tab',
+            'label' => 'Ver agenda',
+            'tab' => 'Agenda',
+        ];
+    }
+
+    if (preg_match('/\b(falla|fallas|monumento|ruta|ir|llegar|visitar|ver)\b/u', $normalized) === 1) {
+        $falla = fallerito_best_falla_match($user, $message);
+        if ($falla !== null) {
+            $name = fallerito_string($falla['name'] ?? '', 90);
+            $actions[] = [
+                'type' => 'open_falla_route',
+                'label' => $name !== '' ? 'Abrir ruta en el mapa: ' . $name : 'Abrir ruta en el mapa',
+                'fallaId' => (string) ($falla['id'] ?? ''),
+                'fallaName' => $name,
+            ];
+        } else {
+            $actions[] = [
+                'type' => 'open_tab',
+                'label' => 'Ver mapa de fallas',
+                'tab' => 'Mapa',
+            ];
+        }
+
+        $actions[] = [
+            'type' => 'open_tab',
+            'label' => 'Abrir catalogo de fallas',
+            'tab' => 'Fallas',
+        ];
+    }
+
+    if (preg_match('/\b(pasaporte|perfil|insignia|insignias|nivel|niveles|progreso|favoritos)\b/u', $normalized) === 1) {
+        $actions[] = [
+            'type' => 'open_tab',
+            'label' => 'Abrir perfil',
+            'tab' => 'Perfil',
+        ];
+    }
+
+    $actions = array_values(array_filter($actions, static fn (array $action): bool => ($action['label'] ?? '') !== ''));
+    $unique = [];
+    $seen = [];
+    foreach ($actions as $action) {
+        $key = implode('|', [
+            (string) ($action['type'] ?? ''),
+            (string) ($action['tab'] ?? ''),
+            (string) ($action['fallaId'] ?? ''),
+            implode(',', array_map('strval', is_array($action['fallaIds'] ?? null) ? $action['fallaIds'] : [])),
+            (string) ($action['label'] ?? ''),
+        ]);
+        if (isset($seen[$key])) {
+            continue;
+        }
+        $seen[$key] = true;
+        $unique[] = $action;
+    }
+
+    return $unique;
+}
+
+function fallerito_user_id(array $user): ?int
+{
+    $userId = isset($user['id']) ? (int) $user['id'] : 0;
+    return $userId > 0 ? $userId : null;
+}
+
+function fallerito_log(array $user, string $actionType, array $details = [], ?int $targetId = null): void
+{
+    $encoded = json_encode($details, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    write_access_log(
+        fallerito_user_id($user),
+        $actionType,
+        'fallerito',
+        $targetId,
+        is_string($encoded) ? mb_substr($encoded, 0, 1500, 'UTF-8') : null
+    );
+}
+
+function fallerito_parse_user_position(mixed $value): ?array
+{
+    if (!is_array($value) || count($value) < 2) {
+        return null;
+    }
+
+    try {
+        $latitude = app_validate_coordinate($value[0], 'userPosition.latitude', 'latitude');
+        $longitude = app_validate_coordinate($value[1], 'userPosition.longitude', 'longitude');
+    } catch (InvalidArgumentException) {
+        return null;
+    }
+
+    if ($latitude === 0.0 || $longitude === 0.0) {
+        return null;
+    }
+
+    return [$latitude, $longitude];
+}
+
+function fallerito_format_distance(float $meters): string
+{
+    if ($meters >= 1000) {
+        return number_format($meters / 1000, 1, ',', '') . ' km';
+    }
+
+    return (string) (round($meters / 10) * 10) . ' m';
+}
+
+function fallerito_extract_duration_minutes(string $message): ?int
+{
+    $normalized = fallerito_normalize_search($message);
+    $minutes = 0;
+    if (preg_match_all('/(\d+)\s*(hora|horas|h|min|minuto|minutos)\b/u', $normalized, $matches, PREG_SET_ORDER) >= 1) {
+        foreach ($matches as $match) {
+            $value = (int) ($match[1] ?? 0);
+            $unit = (string) ($match[2] ?? '');
+            $minutes += str_starts_with($unit, 'h') || str_starts_with($unit, 'hora') ? ($value * 60) : $value;
+        }
+    }
+
+    return $minutes > 0 ? min($minutes, 8 * 60) : null;
+}
+
+function fallerito_wants_restroom(string $message): bool
+{
+    $normalized = fallerito_normalize_search($message);
+    return preg_match('/\b(bano|bano publico|aseo|wc|lavabo|urinario)\b/u', $normalized) === 1;
+}
+
+function fallerito_detect_falla_preference(string $message): string
+{
+    $normalized = fallerito_normalize_search($message);
+    if (preg_match('/\b(infantil|infantiles|ninos|ninas|familia)\b/u', $normalized) === 1) {
+        return 'infantil';
+    }
+    if (preg_match('/\b(especial|premiada|premiadas|top|mejor)\b/u', $normalized) === 1) {
+        return 'especial';
+    }
+    if (preg_match('/\b(rapida|rapido|poco tiempo|express|corta)\b/u', $normalized) === 1) {
+        return 'rapida';
+    }
+    return 'general';
+}
+
+function fallerito_detect_zone_hint(string $message): ?string
+{
+    $normalized = fallerito_normalize_search($message);
+    foreach ([
+        'ayuntamiento', 'ruzafa', 'russafa', 'carmen', 'centro', 'ciutat vella', 'benimaclet',
+        'gran via', 'alameda', 'colon', 'xativa', 'cabanyal', 'malvarrosa', 'mestalla',
+    ] as $zone) {
+        if (str_contains($normalized, fallerito_normalize_search($zone))) {
+            return $zone;
+        }
+    }
+
+    return null;
+}
+
+function fallerito_is_planner_query(string $message, string $intent): bool
+{
+    $normalized = fallerito_normalize_search($message . ' ' . $intent);
+    return preg_match('/\b(plan|planifica|planea|ruta|itinerario|recorrido|horas|hora|minutos|andando|a pie|que hago hoy|esta noche|evito multitudes|menos gente)\b/u', $normalized) === 1
+        || preg_match('/\btengo\s+\d+\s*(hora|horas|h|min|minutos)\b/u', $normalized) === 1;
+}
+
+function fallerito_is_nearby_falla_query(string $message, string $intent): bool
+{
+    $normalized = fallerito_normalize_search($message . ' ' . $intent);
+    $asksFalla = preg_match('/\b(falla|fallas|monumento|que falla veo|recomienda)\b/u', $normalized) === 1
+        || $intent === 'buscar_falla';
+    $asksNear = preg_match('/\b(cerca|cercana|cercanas|aqui|aqui cerca|nearby|alrededor)\b/u', $normalized) === 1;
+
+    return $asksFalla && $asksNear;
+}
+
+function fallerito_needs_falla_clarification(string $message, string $intent, ?array $userPosition, ?string $zoneHint = null): bool
+{
+    $normalized = fallerito_normalize_search($message . ' ' . $intent);
+    $asksFalla = preg_match('/\b(falla|fallas|monumento|que falla veo|recomienda|mejor)\b/u', $normalized) === 1;
+    $asksNear = preg_match('/\b(cerca|cercana|cercanas|mejor)\b/u', $normalized) === 1;
+    $hasZone = $zoneHint !== null || fallerito_detect_zone_hint($message) !== null;
+    $hasPreference = fallerito_detect_falla_preference($message) !== 'general';
+
+    return $asksFalla && ($asksNear || str_contains($normalized, 'que falla veo')) && $userPosition === null && !$hasZone && !$hasPreference;
+}
+
+function fallerito_is_crowded_neighborhood(string $value): bool
+{
+    $normalized = fallerito_normalize_search($value);
+    foreach (['ayuntamiento', 'centro', 'ciutat vella', 'carmen', 'xativa', 'colon'] as $keyword) {
+        if (str_contains($normalized, $keyword)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function fallerito_trace_add_step(array &$trace, string $step): void
+{
+    $trace['steps'] = is_array($trace['steps'] ?? null) ? $trace['steps'] : [];
+    $trace['steps'][] = $step;
+}
+
+function fallerito_trace_add_item(array &$trace, string $type, string $title, string $source, int $score = 1): void
+{
+    $trace['items'] = is_array($trace['items'] ?? null) ? $trace['items'] : [];
+    $trace['items'][] = [
+        'type' => $type,
+        'title' => fallerito_string($title, 120),
+        'source' => fallerito_string($source, 120),
+        'score' => $score,
+    ];
+}
+
+function fallerito_marketplace_business_rows(): array
+{
+    try {
+        return dashboard_fetch_all(
+            "SELECT id, name, type, location, distance, promotion, badge, category
+             FROM marketplace_businesses
+             WHERE status = 'active'
+             ORDER BY updated_at DESC, id DESC
+             LIMIT 20"
+        );
+    } catch (Throwable) {
+        return [];
+    }
+}
+
+function fallerito_best_planner_fallas(array $user, ?array $userPosition, string $message, ?string $zoneHint): array
+{
+    try {
+        $fallas = app_public_fetch_fallas($user);
+    } catch (Throwable) {
+        return [];
+    }
+
+    $preference = fallerito_detect_falla_preference($message);
+    $avoidCrowds = preg_match('/\b(evito multitudes|menos gente|tranquilo|sin aglomeraciones)\b/u', fallerito_normalize_search($message)) === 1;
+    $scored = [];
+
+    foreach ($fallas as $falla) {
+        $haystack = fallerito_normalize_search(implode(' ', [
+            $falla['name'] ?? '',
+            $falla['category'] ?? '',
+            $falla['section'] ?? '',
+            $falla['neighborhood'] ?? '',
+            $falla['address'] ?? '',
+            $falla['prizeText'] ?? '',
+        ]));
+
+        $score = 0.0;
+        if ($zoneHint !== null && str_contains($haystack, fallerito_normalize_search($zoneHint))) {
+            $score += 8;
+        }
+
+        if ($preference === 'infantil' && str_contains($haystack, 'infantil')) {
+            $score += 8;
+        } elseif ($preference === 'especial' && str_contains($haystack, 'especial')) {
+            $score += 8;
+        } elseif ($preference === 'rapida') {
+            $score += ((int) ($falla['eventsCount'] ?? 0)) <= 1 ? 4 : 1;
+        }
+
+        $latitude = (float) ($falla['lat'] ?? $falla['latitude'] ?? 0.0);
+        $longitude = (float) ($falla['lng'] ?? $falla['longitude'] ?? 0.0);
+        if ($latitude === 0.0 || $longitude === 0.0) {
+            continue;
+        }
+        $distanceMeters = null;
+        if ($userPosition !== null && $latitude !== 0.0 && $longitude !== 0.0) {
+            $distanceMeters = gamification_distance_meters($userPosition[0], $userPosition[1], $latitude, $longitude);
+            $score += max(0.0, 6000.0 - min($distanceMeters, 6000.0)) / 220.0;
+        }
+
+        if ($avoidCrowds && fallerito_is_crowded_neighborhood((string) ($falla['neighborhood'] ?? ''))) {
+            $score -= 6;
+        }
+
+        if (!$avoidCrowds && str_contains($haystack, 'especial')) {
+            $score += 2;
+        }
+
+        if ($score <= 0 && $zoneHint === null && $userPosition === null && $preference === 'general') {
+            continue;
+        }
+
+        $falla['_planner_score'] = $score;
+        $falla['_planner_distance'] = $distanceMeters;
+        $scored[] = $falla;
+    }
+
+    usort($scored, static function (array $left, array $right): int {
+        return (($right['_planner_score'] ?? 0) <=> ($left['_planner_score'] ?? 0))
+            ?: (($left['_planner_distance'] ?? PHP_INT_MAX) <=> ($right['_planner_distance'] ?? PHP_INT_MAX));
+    });
+
+    $unique = [];
+    $seen = [];
+    foreach ($scored as $falla) {
+        $latitude = (float) ($falla['lat'] ?? $falla['latitude'] ?? 0.0);
+        $longitude = (float) ($falla['lng'] ?? $falla['longitude'] ?? 0.0);
+        $commission = fallerito_normalize_search((string) ($falla['commissionName'] ?? $falla['name'] ?? ''));
+        $locationKey = round($latitude, 4) . '|' . round($longitude, 4);
+        $uniqueKey = $commission !== '' ? $commission . '|' . $locationKey : $locationKey;
+
+        if (isset($seen[$uniqueKey])) {
+            continue;
+        }
+
+        $seen[$uniqueKey] = true;
+        $unique[] = $falla;
+
+        if (count($unique) >= 5) {
+            break;
+        }
+    }
+
+    return $unique;
+}
+
+function fallerito_best_planner_event(array $user, string $message, ?array $userPosition, ?string $zoneHint): ?array
+{
+    try {
+        $events = app_public_fetch_events($user);
+    } catch (Throwable) {
+        return null;
+    }
+
+    $normalized = fallerito_normalize_search($message);
+    $wantsMascleta = preg_match('/\b(mascleta|mascletae|pirotecn|petard)\b/u', $normalized) === 1;
+    $wantsToday = preg_match('/\b(hoy|hui)\b/u', $normalized) === 1;
+    $wantsTonight = preg_match('/\b(noche|esta noche|tonight)\b/u', $normalized) === 1;
+    $today = (new DateTimeImmutable('now', new DateTimeZone('Europe/Madrid')))->format('Y-m-d');
+    $best = null;
+    $bestScore = 0.0;
+
+    foreach ($events as $event) {
+        $haystack = fallerito_normalize_search(implode(' ', [
+            $event['title'] ?? '',
+            $event['description'] ?? '',
+            $event['category_name'] ?? '',
+            $event['location_name'] ?? '',
+            $event['address'] ?? '',
+            $event['falla_name'] ?? '',
+        ]));
+
+        if ($wantsMascleta && !preg_match('/\b(mascleta|pirotecn)\b/u', $haystack)) {
+            continue;
+        }
+
+        $score = 1.0;
+        $eventDate = (string) ($event['event_date'] ?? '');
+        $startTime = (string) ($event['start_time'] ?? '');
+
+        if ($wantsToday) {
+            if ($eventDate !== $today) {
+                continue;
+            }
+            $score += 6;
+        }
+
+        if ($wantsTonight) {
+            if ($eventDate !== $today || ($startTime !== '' && strcmp($startTime, '18:00:00') < 0)) {
+                continue;
+            }
+            $score += 6;
+        }
+
+        if ($zoneHint !== null && str_contains($haystack, fallerito_normalize_search($zoneHint))) {
+            $score += 4;
+        }
+
+        $latitude = (float) ($event['latitude'] ?? 0.0);
+        $longitude = (float) ($event['longitude'] ?? 0.0);
+        if ($userPosition !== null && $latitude !== 0.0 && $longitude !== 0.0) {
+            $score += max(0.0, 4000.0 - min(gamification_distance_meters($userPosition[0], $userPosition[1], $latitude, $longitude), 4000.0)) / 250.0;
+        }
+
+        if ($score > $bestScore) {
+            $bestScore = $score;
+            $best = $event;
+        }
+    }
+
+    return $best;
+}
+
+function fallerito_best_planner_business(string $message, ?string $zoneHint): ?array
+{
+    $normalized = fallerito_normalize_search($message);
+    if (!fallerito_is_marketplace_query($message, 'planner')) {
+        return null;
+    }
+
+    $best = null;
+    $bestScore = 0.0;
+    foreach (fallerito_marketplace_business_rows() as $business) {
+        $haystack = fallerito_normalize_search(implode(' ', [
+            $business['name'] ?? '',
+            $business['type'] ?? '',
+            $business['location'] ?? '',
+            $business['promotion'] ?? '',
+            $business['category'] ?? '',
+        ]));
+
+        $score = preg_match('/\b(restaurante|bar|comida|tapas|paella|horchata)\b/u', $haystack) === 1 ? 6.0 : 1.0;
+        if ($zoneHint !== null && str_contains($haystack, fallerito_normalize_search($zoneHint))) {
+            $score += 4;
+        }
+        if (preg_match('/\b(comer|cenar|tapas|paella|horchata)\b/u', $normalized) === 1) {
+            $score += 2;
+        }
+
+        if ($score > $bestScore) {
+            $bestScore = $score;
+            $best = $business;
+        }
+    }
+
+    return $best;
+}
+
+function fallerito_unique_actions(array $actions): array
+{
+    $unique = [];
+    $seen = [];
+    foreach ($actions as $action) {
+        if (!is_array($action) || trim((string) ($action['label'] ?? '')) === '') {
+            continue;
+        }
+        $key = implode('|', [
+            (string) ($action['type'] ?? ''),
+            (string) ($action['tab'] ?? ''),
+            (string) ($action['fallaId'] ?? ''),
+            implode(',', array_map('strval', is_array($action['fallaIds'] ?? null) ? $action['fallaIds'] : [])),
+            (string) ($action['label'] ?? ''),
+        ]);
+        if (isset($seen[$key])) {
+            continue;
+        }
+        $seen[$key] = true;
+        $unique[] = $action;
+    }
+
+    return $unique;
+}
+
+function fallerito_planner_reply(string $message, ?int $minutes, array $fallas, ?array $event, ?array $business): string
+{
+    $avoidCrowds = preg_match('/\b(evito multitudes|menos gente|tranquilo|sin aglomeraciones)\b/u', fallerito_normalize_search($message)) === 1;
+    $lines = [];
+    $header = 'Te propongo una ruta';
+    if ($minutes !== null) {
+        $header .= ' de unas ' . ($minutes >= 60
+            ? number_format($minutes / 60, ($minutes % 60) === 0 ? 0 : 1, ',', '') . ' h'
+            : $minutes . ' min');
+    }
+    if ($fallas !== []) {
+        $header .= ' con ' . count($fallas) . ' falla' . (count($fallas) === 1 ? '' : 's');
+    }
+    if (preg_match('/\b(andando|a pie)\b/u', fallerito_normalize_search($message)) === 1) {
+        $header .= ' andando';
+    }
+    $lines[] = $header . ':';
+
+    foreach ($fallas as $index => $falla) {
+        $distanceText = isset($falla['_planner_distance']) && is_numeric($falla['_planner_distance'])
+            ? ' a ' . fallerito_format_distance((float) $falla['_planner_distance'])
+            : '';
+        $prefix = $index === 0 ? 'Empieza por ' : 'Sigue por ';
+        $lines[] = ($index + 1) . '. ' . $prefix . fallerito_string($falla['name'] ?? 'esta falla', 90) . $distanceText . '.';
+    }
+
+    $step = count($fallas) + 1;
+    if ($event !== null) {
+        $eventDate = trim((string) ($event['event_date'] ?? ''));
+        $time = trim((string) ($event['start_time'] ?? ''));
+        $timeLabel = $time !== '' ? ' a las ' . substr($time, 0, 5) : '';
+        $lines[] = $step . '. Encaja ' . fallerito_string($event['title'] ?? 'el acto de agenda', 110) . $timeLabel
+            . ($eventDate !== '' ? ' del ' . $eventDate : '') . '.';
+        $step++;
+    } elseif (preg_match('/\b(mascleta|mascletae|pirotecn)\b/u', fallerito_normalize_search($message)) === 1) {
+        $lines[] = $step . '. No veo ahora una mascleta publicada en la agenda para esa busqueda; abre Agenda para confirmarlo.';
+        $step++;
+    }
+
+    if ($business !== null) {
+        $lines[] = $step . '. Para comer cerca, mira ' . fallerito_string($business['name'] ?? 'Marketplace', 90)
+            . ' en ' . fallerito_string($business['location'] ?? 'Marketplace', 70) . '.';
+        $step++;
+    } elseif (fallerito_is_marketplace_query($message, 'planner')) {
+        $lines[] = $step . '. Ahora mismo no hay ofertas disponibles para comida o compras en Marketplace.';
+        $step++;
+    }
+
+    if (fallerito_wants_restroom($message)) {
+        $lines[] = $step . '. Al abrir la ruta en el mapa, activa la capa de baños publicos para ver los WC cercanos al recorrido.';
+        $step++;
+    }
+
+    if ($avoidCrowds) {
+        $lines[] = $step . '. Para evitar multitudes, evita Ayuntamiento justo antes de actos grandes y prioriza laterales o barrios menos centrales.';
+    } else {
+        $lines[] = $step . '. Pulsa el boton de la ruta en el mapa para abrir este recorrido completo con todas las paradas.';
+    }
+
+    return implode("\n", $lines);
+}
+
+function fallerito_nearby_falla_reply(array $fallas, string $message): string
+{
+    if ($fallas === []) {
+        return implode("\n", [
+            'He intentado resolverlo con tu ubicacion, pero ahora mismo no encuentro una falla cercana bien posicionada en los datos locales.',
+            'Prueba abriendo el mapa o dime una zona concreta y te afino la recomendacion.',
+        ]);
+    }
+
+    $preference = fallerito_detect_falla_preference($message);
+    $avoidCrowds = preg_match('/\b(evito multitudes|menos gente|tranquilo|sin aglomeraciones)\b/u', fallerito_normalize_search($message)) === 1;
+    $lines = [
+        'He detectado tu ubicacion y he priorizado cercania, tipo y contexto fallero.',
+    ];
+
+    $top = $fallas[0];
+    $topDistance = isset($top['_planner_distance']) && is_numeric($top['_planner_distance'])
+        ? ' a ' . fallerito_format_distance((float) $top['_planner_distance'])
+        : '';
+    $reason = $preference !== 'general'
+        ? ' encaja con tu preferencia ' . $preference
+        : ($avoidCrowds ? ' te evita la zona mas cargada' : ' es la opcion mas redonda por cercania');
+
+    $lines[] = 'La mejor opcion ahora es ' . fallerito_string($top['name'] ?? 'esta falla', 90) . $topDistance . ' porque' . $reason . '.';
+
+    if (isset($fallas[1])) {
+        $second = $fallas[1];
+        $secondDistance = isset($second['_planner_distance']) && is_numeric($second['_planner_distance'])
+            ? ' (' . fallerito_format_distance((float) $second['_planner_distance']) . ')'
+            : '';
+        $lines[] = 'Alternativa: ' . fallerito_string($second['name'] ?? 'otra falla', 90) . $secondDistance . '.';
+    }
+
+    $lines[] = 'Si quieres, te la convierto en ruta rapida, especial, infantil o con menos gente.';
+    return implode("\n", $lines);
+}
+
+function fallerito_clarification_reply(): string
+{
+    return implode("\n", [
+        'Puedo afinarte esa recomendacion, pero me falta una referencia clara.',
+        'Dime tu zona (Ayuntamiento, Ruzafa, Carmen, Benimaclet...) o activa el GPS.',
+        'Si quieres, añade tambien el tipo: especial, infantil o rapida de ver.',
+        'Con eso te digo una falla concreta y te preparo la ruta.',
+    ]);
+}
+
+function fallerito_ollama_request(array $messages, bool $useVision = false): ?string
+{
+    $url = fallerito_env('FALLERITO_OLLAMA_URL', 'http://localhost:11434/api/chat');
+    $model = $useVision
+        ? fallerito_env('FALLERITO_OLLAMA_VISION_MODEL', 'llava:latest')
+        : fallerito_env('FALLERITO_OLLAMA_MODEL', 'dolphin-llama3:8b');
+    $timeout = (float) fallerito_env('FALLERITO_OLLAMA_TIMEOUT', '120');
+
+    $payload = json_encode([
+        'model' => $model,
+        'messages' => $messages,
+        'stream' => false,
+        'options' => [
+            'num_predict' => 250,
+            'num_ctx' => (int) fallerito_env('FALLERITO_OLLAMA_CONTEXT', '4096'),
+            'temperature' => 0.7,
+        ],
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+    if (!is_string($payload)) {
+        return null;
+    }
+
+    $context = stream_context_create([
+        'http' => [
+            'method' => 'POST',
+            'header' => "Content-Type: application/json\r\nAccept: application/json\r\n",
+            'content' => $payload,
+            'timeout' => max(5.0, $timeout),
+            'ignore_errors' => true,
+        ],
+    ]);
+
+    $raw = @file_get_contents($url, false, $context);
+    if (!is_string($raw) || trim($raw) === '') {
+        return null;
+    }
+
+    try {
+        $decoded = json_decode($raw, true, 64, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        return null;
+    }
+
+    $content = trim((string) ($decoded['message']['content'] ?? ''));
+    return $content !== '' ? mb_substr($content, 0, 1400, 'UTF-8') : null;
+}
+
+function fallerito_debug_payload(string $intent, string $model, array $ragTrace, array $agentDebug): array
+{
+    return [
+        'intent' => $intent,
+        'model' => $model,
+        'rag' => $ragTrace,
+        'agent' => $agentDebug,
+    ];
+}
+
+try {
+    app_require_method('POST');
+    $user = api_registered_user_or_error('Necesitas una cuenta registrada para usar Fallerito.');
+    app_require_json_content_type();
+    csrf_assert_valid();
+
+    $falleritoCreditWindowSeconds = 315360000;
+    rate_limit_api_enforce('api_fallerito', [
+        [
+            'scope' => 'user',
+            'max' => 2,
+            'window' => $falleritoCreditWindowSeconds,
+            'block_for' => $falleritoCreditWindowSeconds,
+            'message' => 'Has agotado tus 2 preguntas gratuitas de Fallerito.',
+        ],
+        [
+            'scope' => 'session',
+            'max' => 2,
+            'window' => $falleritoCreditWindowSeconds,
+            'block_for' => $falleritoCreditWindowSeconds,
+            'message' => 'Has agotado tus 2 preguntas gratuitas de Fallerito.',
+        ],
+    ], app_rate_limit_context($user));
+
+    $payload = app_request_json_payload(5000000);
+    $message = fallerito_string($payload['message'] ?? '', 900);
+    $intent = fallerito_string($payload['intent'] ?? 'desconocido', 80);
+    $localReply = fallerito_string($payload['localReply'] ?? '', 1000);
+    $settings = isset($payload['settings']) && is_array($payload['settings']) ? $payload['settings'] : [];
+    $context = isset($payload['context']) && is_array($payload['context']) ? $payload['context'] : [];
+    $userPosition = fallerito_parse_user_position($context['userPosition'] ?? null);
+    $assistantMode = fallerito_string($context['assistantMode'] ?? 'default', 40);
+    $language = fallerito_string($settings['language'] ?? 'es', 20);
+    $responseMode = fallerito_string($settings['responseMode'] ?? 'short', 30);
+    $languageInstruction = match ($language) {
+        'val' => 'Responde siempre en valenciano natural.',
+        'en' => 'Always answer in English.',
+        default => 'Responde siempre en espanol.',
+    };
+    $modeInstruction = match ($responseMode) {
+        'detailed' => 'Da una respuesta detallada, con contexto util pero sin alargarte de mas.',
+        'steps' => 'Responde solo con pasos rapidos numerados, sin parrafos largos.',
+        default => 'Da una respuesta corta y directa.',
+    };
+    $assistantModeInstruction = match ($assistantMode) {
+        'deepthinking-fallero' => 'Actua en modo Deep Thinking fallero: razona mejor, prioriza contexto local y pide solo la aclaracion minima necesaria.',
+        'deepseek-fallero-nearby' => 'Actua en modo DeepSeek fallero cerca de mi: prioriza GPS, distancia, zona y utilidad practica alrededor del usuario.',
+        default => 'Actua en modo fallero general y pragmatico.',
+    };
+    $forceNearbyMode = $assistantMode === 'deepseek-fallero-nearby';
+    $history = isset($payload['history']) && is_array($payload['history'])
+        ? fallerito_history($payload['history'])
+        : [];
+    $documents = isset($payload['documents']) && is_array($payload['documents'])
+        ? fallerito_documents($payload['documents'])
+        : [];
+    $hasDocuments = $documents !== [];
+    $documentImages = fallerito_document_images($documents);
+    $hasDocumentImages = $documentImages !== [];
+
+    if ($message === '') {
+        app_json_error('Mensaje vacio.', 422);
+    }
+
+    $memory = fallerito_memory_get($user);
+    $memory = fallerito_memory_learn($user, $memory, $message, $intent, $settings);
+    $effectiveMessage = fallerito_memory_augment_message($message, $memory, $intent, $userPosition);
+    $resolvedZoneHint = fallerito_detect_zone_hint($effectiveMessage);
+    $memoryContext = fallerito_memory_context($memory);
+    $agent = fallerito_agent_run($user, $effectiveMessage, $intent, $memory, $documents, $userPosition, $resolvedZoneHint);
+    $agentDebug = is_array($agent['debug'] ?? null) ? $agent['debug'] : fallerito_agent_empty_debug();
+    $agentContext = (string) ($agent['context'] ?? '');
+
+    fallerito_log($user, 'fallerito_query', [
+        'intent' => $intent,
+        'language' => $language,
+        'response_mode' => $responseMode,
+        'assistant_mode' => $assistantMode,
+        'memory_language' => $memory['language'] ?? 'es',
+        'prefers_walking' => $memory['prefersWalking'] ?? null,
+        'avoids_crowds' => $memory['avoidsCrowds'] ?? null,
+        'favorite_zone' => $memory['favoriteZones'][0] ?? null,
+        'has_documents' => $hasDocuments,
+        'has_position' => $userPosition !== null,
+        'message' => fallerito_string($message, 220),
+    ]);
+
+    $rag = fallerito_rag_result($user, $effectiveMessage);
+    if ($hasDocuments) {
+        $rag['trace'] = is_array($rag['trace'] ?? null) ? $rag['trace'] : [];
+        $rag['trace']['sources'] = is_array($rag['trace']['sources'] ?? null) ? $rag['trace']['sources'] : [];
+        $rag['trace']['sources']['documentos'] = ((int) ($rag['trace']['sources']['documentos'] ?? 0)) + count($documents);
+        $rag['trace']['items'] = array_merge(fallerito_documents_trace_items($documents), is_array($rag['trace']['items'] ?? null) ? $rag['trace']['items'] : []);
+    }
+    $rag['trace'] = is_array($rag['trace'] ?? null) ? $rag['trace'] : [];
+    $isPlannerQuery = !$hasDocuments && fallerito_is_planner_query($effectiveMessage, $intent);
+    if ($assistantMode === 'deepthinking-fallero') {
+        fallerito_trace_add_step($rag['trace'], 'He activado Deep Thinking fallero para pensar mejor antes de responder.');
+    } elseif ($assistantMode === 'deepseek-fallero-nearby') {
+        fallerito_trace_add_step(
+            $rag['trace'],
+            $userPosition !== null
+                ? 'He activado DeepSeek fallero cerca de ti con apoyo de GPS.'
+                : 'He activado DeepSeek fallero cerca de ti y estoy esperando GPS o una zona.'
+        );
+    }
+    $actions = fallerito_actions($user, $effectiveMessage, $intent);
+
+    if (
+        !$hasDocuments
+        && (
+            ($forceNearbyMode && $userPosition === null && $resolvedZoneHint === null)
+            || fallerito_needs_falla_clarification($effectiveMessage, $intent, $userPosition, $resolvedZoneHint)
+        )
+    ) {
+        fallerito_trace_add_step($rag['trace'], 'He detectado que faltan zona o GPS para recomendar una falla cercana con precision.');
+        fallerito_log($user, 'fallerito_ambiguity_prompt', [
+            'intent' => $intent,
+            'message' => fallerito_string($message, 200),
+            'assistant_mode' => $assistantMode,
+        ]);
+
+        app_json_response([
+            'ok' => true,
+            'reply' => fallerito_clarification_reply(),
+            'intent' => $intent,
+            'source' => 'deepthinking-fallero',
+            'model' => 'deterministic-deep',
+            'memory' => $memory,
+            'actions' => fallerito_unique_actions(array_merge($actions, [
+                ['type' => 'open_tab', 'label' => 'Abrir mapa', 'tab' => 'Mapa'],
+                ['type' => 'open_tab', 'label' => 'Abrir catalogo de fallas', 'tab' => 'Fallas'],
+            ])),
+            'debug' => [
+                ...fallerito_debug_payload(
+                    $intent,
+                    'deterministic-deep',
+                    is_array($rag['trace'] ?? null) ? $rag['trace'] : [],
+                    $agentDebug
+                ),
+            ],
+        ]);
+    }
+
+    if (
+        !$hasDocuments
+        && ($userPosition !== null || $resolvedZoneHint !== null)
+        && !$isPlannerQuery
+        && ($forceNearbyMode || fallerito_is_nearby_falla_query($effectiveMessage, $intent))
+    ) {
+        $nearbyFallas = fallerito_best_planner_fallas($user, $userPosition, $effectiveMessage, $resolvedZoneHint);
+        fallerito_trace_add_step(
+            $rag['trace'],
+            $userPosition !== null
+                ? 'He detectado tu ubicacion y he comparado distancia, tipo de falla y contexto alrededor.'
+                : 'He usado tu zona habitual guardada para comparar fallas cercanas sin pedirte contexto extra.'
+        );
+        fallerito_trace_add_step($rag['trace'], 'He aplicado una busqueda profunda fallera para quedarme con las opciones mas cercanas y utiles.');
+        foreach (array_slice($nearbyFallas, 0, 3) as $falla) {
+            $distanceLabel = isset($falla['_planner_distance']) && is_numeric($falla['_planner_distance'])
+                ? ' · ' . fallerito_format_distance((float) $falla['_planner_distance'])
+                : '';
+            fallerito_trace_add_item(
+                $rag['trace'],
+                'falla',
+                fallerito_string(($falla['name'] ?? 'Falla') . $distanceLabel, 120),
+                'Catalogo de fallas',
+                5
+            );
+        }
+
+        $nearbyActions = $actions;
+        if ($nearbyFallas !== []) {
+            $nearbyActions[] = [
+                'type' => 'open_falla_route',
+                'label' => 'Abrir ruta en el mapa: ' . fallerito_string($nearbyFallas[0]['name'] ?? 'la falla sugerida', 90),
+                'fallaId' => (string) ($nearbyFallas[0]['id'] ?? ''),
+                'fallaName' => fallerito_string($nearbyFallas[0]['name'] ?? '', 90),
+            ];
+        }
+        $nearbyActions[] = ['type' => 'open_tab', 'label' => 'Abrir mapa', 'tab' => 'Mapa'];
+        $nearbyActions[] = ['type' => 'open_tab', 'label' => 'Abrir catalogo de fallas', 'tab' => 'Fallas'];
+
+        fallerito_log($user, 'fallerito_nearby_resolved', [
+            'intent' => $intent,
+            'message' => fallerito_string($message, 220),
+            'assistant_mode' => $assistantMode,
+            'has_position' => $userPosition !== null,
+            'zone' => $resolvedZoneHint,
+            'top_falla' => $nearbyFallas[0]['name'] ?? null,
+        ], isset($nearbyFallas[0]['id']) ? (int) $nearbyFallas[0]['id'] : null);
+
+        app_json_response([
+            'ok' => true,
+            'reply' => fallerito_nearby_falla_reply($nearbyFallas, $effectiveMessage),
+            'intent' => $intent,
+            'source' => 'deepseek-fallero',
+            'model' => 'deterministic-deepseek',
+            'memory' => $memory,
+            'actions' => fallerito_unique_actions($nearbyActions),
+            'debug' => [
+                ...fallerito_debug_payload(
+                    $intent,
+                    'deterministic-deepseek',
+                    is_array($rag['trace'] ?? null) ? $rag['trace'] : [],
+                    $agentDebug
+                ),
+            ],
+        ]);
+    }
+
+    if ($isPlannerQuery) {
+        $minutes = fallerito_extract_duration_minutes($effectiveMessage);
+        $zoneHint = $resolvedZoneHint;
+        $plannerFallas = fallerito_best_planner_fallas($user, $userPosition, $effectiveMessage, $zoneHint);
+        $plannerEvent = fallerito_best_planner_event($user, $effectiveMessage, $userPosition, $zoneHint);
+        $plannerBusiness = fallerito_best_planner_business($effectiveMessage, $zoneHint);
+        $rag['trace'] = is_array($rag['trace'] ?? null) ? $rag['trace'] : [];
+        fallerito_trace_add_step($rag['trace'], 'He activado el modo planificador con tiempo, desplazamiento y preferencias de la peticion.');
+        if ($plannerFallas !== []) {
+            foreach ($plannerFallas as $falla) {
+                fallerito_trace_add_item($rag['trace'], 'falla', (string) ($falla['name'] ?? 'Falla'), 'Catalogo de fallas', 4);
+            }
+        }
+        if ($plannerEvent !== null) {
+            fallerito_trace_add_item($rag['trace'], 'evento', (string) ($plannerEvent['title'] ?? 'Evento'), 'Agenda', 4);
+        }
+        if ($plannerBusiness !== null) {
+            fallerito_trace_add_item($rag['trace'], 'negocio', (string) ($plannerBusiness['name'] ?? 'Marketplace'), 'Marketplace', 3);
+        }
+
+        $plannerActions = [];
+        if ($plannerFallas !== []) {
+            $plannerRouteIds = array_values(array_unique(array_filter(array_map(
+                static fn (array $falla): string => trim((string) ($falla['id'] ?? '')),
+                $plannerFallas
+            ), static fn (string $id): bool => $id !== '')));
+            $plannerActions[] = [
+                'type' => 'open_falla_route',
+                'label' => count($plannerRouteIds) > 1
+                    ? 'Abrir ruta conjunta en el mapa'
+                    : 'Abrir ruta en el mapa: ' . fallerito_string($plannerFallas[0]['name'] ?? 'la falla sugerida', 90),
+                'fallaId' => (string) ($plannerFallas[count($plannerFallas) - 1]['id'] ?? $plannerFallas[0]['id'] ?? ''),
+                'fallaIds' => $plannerRouteIds,
+                'routeStops' => array_values(array_map(
+                    static fn (array $falla): array => [
+                        'id' => (string) ($falla['id'] ?? ''),
+                        'lat' => (float) ($falla['lat'] ?? $falla['latitude'] ?? 0.0),
+                        'lng' => (float) ($falla['lng'] ?? $falla['longitude'] ?? 0.0),
+                        'nombre' => fallerito_string((string) ($falla['name'] ?? 'Falla'), 90),
+                    ],
+                    $plannerFallas
+                )),
+                'fallaName' => fallerito_string($plannerFallas[count($plannerFallas) - 1]['name'] ?? $plannerFallas[0]['name'] ?? '', 90),
+            ];
+        }
+        if ($plannerEvent !== null) {
+            $plannerActions[] = ['type' => 'open_tab', 'label' => 'Ver agenda', 'tab' => 'Agenda'];
+        }
+        if ($plannerBusiness !== null || fallerito_is_marketplace_query($effectiveMessage, $intent)) {
+            $plannerActions[] = ['type' => 'open_marketplace', 'label' => 'Ver marketplace', 'tab' => 'Marketplace'];
+        }
+        $plannerActions[] = ['type' => 'open_tab', 'label' => 'Abrir mapa', 'tab' => 'Mapa'];
+        $plannerActions[] = ['type' => 'open_tab', 'label' => 'Abrir catalogo de fallas', 'tab' => 'Fallas'];
+
+        fallerito_log($user, 'fallerito_plan_generated', [
+            'intent' => $intent,
+            'minutes' => $minutes,
+            'zone' => $zoneHint,
+            'has_position' => $userPosition !== null,
+            'falla' => $plannerFallas[0]['name'] ?? null,
+            'event' => $plannerEvent['title'] ?? null,
+            'business' => $plannerBusiness['name'] ?? null,
+        ], isset($plannerFallas[0]['id']) ? (int) $plannerFallas[0]['id'] : null);
+
+        app_json_response([
+            'ok' => true,
+            'reply' => fallerito_planner_reply($effectiveMessage, $minutes, $plannerFallas, $plannerEvent, $plannerBusiness),
+            'intent' => $intent,
+            'source' => 'datos locales',
+            'model' => 'deterministic',
+            'memory' => $memory,
+            'actions' => fallerito_unique_actions($plannerActions),
+            'debug' => [
+                ...fallerito_debug_payload(
+                    $intent,
+                    'deterministic',
+                    is_array($rag['trace'] ?? null) ? $rag['trace'] : [],
+                    $agentDebug
+                ),
+            ],
+        ]);
+    }
+
+    $ragTrace = is_array($rag['trace'] ?? null) ? $rag['trace'] : [];
+    $ragSources = is_array($ragTrace['sources'] ?? null) ? $ragTrace['sources'] : [];
+    $ragTotal = array_sum(array_map('intval', $ragSources));
+    if (!$hasDocuments && $ragTotal === 0) {
+        fallerito_log($user, 'fallerito_no_match', [
+            'intent' => $intent,
+            'message' => fallerito_string($effectiveMessage, 220),
+        ]);
+    }
+
+    if (!$hasDocuments && fallerito_is_marketplace_query($effectiveMessage, $intent) && !fallerito_marketplace_has_active_content()) {
+        app_json_response([
+            'ok' => true,
+            'reply' => 'Ahora mismo no hay ofertas disponibles.',
+            'intent' => $intent,
+            'source' => 'datos locales',
+            'model' => 'deterministic',
+            'memory' => $memory,
+            'actions' => $actions,
+            'debug' => [
+                ...fallerito_debug_payload(
+                    $intent,
+                    'deterministic',
+                    is_array($rag['trace'] ?? null) ? $rag['trace'] : [],
+                    $agentDebug
+                ),
+            ],
+        ]);
+    }
+
+    if (!$hasDocuments && fallerito_is_emergency_query($effectiveMessage, $intent)) {
+        app_json_response([
+            'ok' => true,
+            'reply' => fallerito_emergency_reply(),
+            'intent' => $intent,
+            'source' => 'datos locales',
+            'model' => 'deterministic',
+            'memory' => $memory,
+            'actions' => $actions,
+            'debug' => [
+                ...fallerito_debug_payload(
+                    $intent,
+                    'deterministic',
+                    is_array($rag['trace'] ?? null) ? $rag['trace'] : [],
+                    $agentDebug
+                ),
+            ],
+        ]);
+    }
+
+    if (!$hasDocuments && fallerito_is_transport_query($effectiveMessage, $intent)) {
+        app_json_response([
+            'ok' => true,
+            'reply' => fallerito_transport_reply(),
+            'intent' => $intent,
+            'source' => 'datos locales',
+            'model' => 'deterministic',
+            'memory' => $memory,
+            'actions' => $actions,
+            'debug' => [
+                ...fallerito_debug_payload(
+                    $intent,
+                    'deterministic',
+                    is_array($rag['trace'] ?? null) ? $rag['trace'] : [],
+                    $agentDebug
+                ),
+            ],
+        ]);
+    }
+
+    $userMessage = [
+        'role' => 'user',
+        'content' => "Intencion detectada: {$intent}\nRespuesta local base: {$localReply}\nDocumentos adjuntos: "
+            . ($hasDocuments ? implode(', ', array_column($documents, 'name')) : 'ninguno')
+            . "\nPosicion del usuario: " . ($userPosition !== null ? ($userPosition[0] . ',' . $userPosition[1]) : 'no disponible')
+            . "\nMensaje actual: {$message}",
+    ];
+    if ($hasDocumentImages) {
+        $userMessage['images'] = $documentImages;
+    }
+
+    $messages = array_merge(
+        [[
+            'role' => 'system',
+            'content' => fallerito_app_context()
+                . "\n\n" . (string) ($rag['context'] ?? '')
+                . ($agentContext !== '' ? "\n\n{$agentContext}" : '')
+                . "\n\n" . fallerito_documents_context($documents)
+                . ($memoryContext !== '' ? "\n\n{$memoryContext}" : '')
+                . "\n\nPreferencias del usuario: {$languageInstruction} {$modeInstruction} {$assistantModeInstruction}"
+                . "\nSi hay acciones disponibles en la interfaz, invita al usuario a pulsarlas. No digas que no puedes abrir la app; el dashboard mostrara botones accionables.",
+        ]],
+        $history,
+        [$userMessage]
+    );
+
+    $reply = fallerito_ollama_request($messages, $hasDocumentImages);
+    if ($reply === null) {
+        app_json_error($hasDocumentImages
+            ? 'Fallerito necesita un modelo de vision en Ollama para analizar fotos. Instala llava:latest o configura FALLERITO_OLLAMA_VISION_MODEL.'
+            : 'Fallerito requiere Dolphin local. Arranca Ollama con el modelo configurado antes de usarlo.', 503);
+    }
+
+    app_json_response([
+        'ok' => true,
+        'reply' => $reply,
+        'intent' => $intent,
+        'source' => 'ollama',
+        'model' => $hasDocumentImages
+            ? fallerito_env('FALLERITO_OLLAMA_VISION_MODEL', 'llava:latest')
+            : fallerito_env('FALLERITO_OLLAMA_MODEL', 'dolphin-llama3:8b'),
+        'memory' => $memory,
+        'actions' => $actions,
+        'debug' => [
+            ...fallerito_debug_payload(
+                $intent,
+                $hasDocumentImages
+                    ? fallerito_env('FALLERITO_OLLAMA_VISION_MODEL', 'llava:latest')
+                    : fallerito_env('FALLERITO_OLLAMA_MODEL', 'dolphin-llama3:8b'),
+                is_array($rag['trace'] ?? null) ? $rag['trace'] : [],
+                $agentDebug
+            ),
+        ],
+    ]);
+} catch (InvalidArgumentException $exception) {
+    app_json_error($exception->getMessage(), 422);
+} catch (Throwable $exception) {
+    app_json_error('No se pudo consultar Fallerito.', 500);
+}

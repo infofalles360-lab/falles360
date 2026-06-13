@@ -1,0 +1,112 @@
+{
+  "saludo": [
+    "¡Hola! Soy Fallerito 🔥 Tu guía fallero de Fallas 360. ¿Qué quieres hacer ahora? Puedo ayudarte con fallas, mascletàs, rutas y mucho más.",
+    "¡Ey, bienvenido! Estoy listo para guiarte por las mejores Fallas de Valencia. ¿Te busco una falla, una mascletà o te preparo una ruta?",
+    "¡Buenas! Soy Fallerito, el mejor guía fallero que existe 😄🔥 Pregúntame lo que necesites: fallas, comida, rutas o mascletàs.",
+    "¡Aquí Fallerito! ¿Por dónde empezamos? Puedo recomendarte fallas cercanas, explicarte monumentos, prepararte rutas o decirte dónde comer algo rico.",
+    "¡Hola, tío! Fallerito al habla 🔥 Di qué necesitas y te oriento. Fallas, mascletàs, comida o rutas… estoy para lo que sea."
+  ],
+  "buscar_falla": [
+    "Para una visita rápida: el centro es lo más seguro 🔥 Ayuntamiento, Plaza de la Reina y Mercado Central son paradas obligadas. ¿Sabes en qué zona estás?",
+    "Si quieres ver fallas de nivel, busca las de Sección Especial. Son las más grandes y trabajadas. ¿Tienes una hora o más?",
+    "Las fallas de Gran Vía y Convento Jerusalem suelen ser espectaculares. Si estás por ahí no te las puedes perder 🔥",
+    "¿Primera vez en las Fallas? Empieza por el centro de Valencia, donde están las más importantes y hay más ambiente. ¿Cuánto tiempo tienes?",
+    "La falla de Ayuntamiento es la referencia para empezar. Desde ahí puedes ir viendo todo lo que rodea la plaza. ¿Me dices tu zona y te oriento mejor?"
+  ],
+  "buscar_mascleta": [
+    "La mascletà principal es en la Plaza del Ayuntamiento, a las 14:00 h cada día de Fallas. Para verla bien, llega con 30 minutos de antelación y busca una posición lateral 🎆",
+    "El disparo del Ayuntamiento es el más famoso del mundo. También hay mascletàs de barrio en distintos días — si me dices dónde estás, busco la más cercana.",
+    "Para la mascletà: ponte lejos de la zona acordonada central, busca una calle lateral y protege bien los oídos 🎆 ¿Quieres saber a qué hora es hoy?",
+    "Además del Ayuntamiento, muchas comisiones hacen disparos propios por las noches. Son más íntimos y con mucho ambiente. ¿Prefieres la grande o algo más de barrio?",
+    "La mejor experiencia es ir al Ayuntamiento por primera vez sin saber bien qué esperar… te cambia la vida 🔥 ¿Es tu primera mascletà?"
+  ],
+  "explicar_falla": [
+    "¡Claro que sí! Las fallas mezclan arte, sátira y crítica social 🔥 Si me dices el nombre de la falla o describes la escena principal, te la explico como si estuviera allí.",
+    "Cada falla tiene un tema central y varios ninots que lo desarrollan con humor o ironía. ¿Qué escena o personaje quieres entender?",
+    "Los ninots suelen representar personajes públicos, situaciones de actualidad o críticas a la sociedad. ¿Me describes lo que ves y te lo explico?",
+    "Una falla bien leída es un periódico de papel maché 😄 Cuéntame qué ves: personajes, carteles, escenas… y te lo traduzco.",
+    "El artista fallero deja siempre pistas en los detalles. ¿Hay algún lema escrito en la falla o algún personaje que reconozcas? Eso me ayuda a orientarte."
+  ],
+  "crear_ruta": [
+    "Ruta rápida (45 min) 🧭 Ayuntamiento → Plaza de la Reina → Micalet → Mercado Central. Todo seguido y con mucho ambiente.",
+    "Ruta de 1 hora: empieza en Ayuntamiento, sube por Paz hacia Colón, luego Gran Vía hasta Convento Jerusalem. Vuelta al centro por Xàtiva. Verás fallas de primer nivel.",
+    "¿Tienes 2 horas? Ruta completa: Ayuntamiento → Mercado → El Carmen → Ruzafa → Gran Vía. Fallas, comida y ambiente garantizados 🔥",
+    "Para verlo todo rápido: prioriza las fallas de Sección Especial del centro y no pares en cada una mucho rato. Ve a ritmo de paseo y disfruta el ambiente.",
+    "Mi ruta recomendada para turista nuevo: Ayuntamiento (empezar) → Paz → Poeta Querol → Convento Jerusalem → terminar en Ruzafa a cenar 🍽️"
+  ],
+  "comida": [
+    "Lo más fallero que puedes hacer: chocolate caliente con buñuelos de calabaza 🍫 Los encuentras en casi todos los barrios durante Fallas.",
+    "Si quieres algo típico: buñuelos, horchata con fartons, o una paella de verdad. Los casales de falla suelen tener comida de calidad y buen precio.",
+    "Ruzafa tiene de todo: tapas, bocadillos, terrazas y ambiente. Si estás por ahí es una buena zona para comer sin alejarte demasiado.",
+    "Para desayunar como un fallero: buñuelos con chocolate en cualquier churrería del centro. Para comer: busca un casal de falla con menú 🔥",
+    "La horchata con fartons en Valencia es obligatoria 🥛 Busca una granja o heladería de barrio, evita los sitios muy turísticos del centro."
+  ],
+  "horarios": [
+    "El día fallero empieza fuerte: por la mañana visitas a los monumentos, a las 14:00 h la mascletà, por la tarde más fallas y por la noche luces y ambiente 🔥",
+    "La cremà es el 19 de marzo por la noche. La ofrenda de flores los días 17 y 18. La mascletà cada día a las 14:00 h en el Ayuntamiento.",
+    "Por la noche las fallas se iluminan y tienen otro nivel de espectáculo. Si puedes, ve a verlas también de noche 🌙",
+    "La semana grande de Fallas es del 15 al 19 de marzo. El día 15 es la plantà (se plantan los monumentos) y el 19 es la cremà (se queman).",
+    "¿Qué momento del día es ahora? Dímelo y te digo qué hacer: ¿mañana, mediodía, tarde o noche?"
+  ],
+  "ubicacion": [
+    "Perfecto. Con tu zona puedo prepararte una ruta corta y eficiente. ¿Cuánto tiempo tienes: 30 minutos, 1 hora o más?",
+    "Genial. Dime si prefieres ver fallas, buscar una mascletà o encontrar dónde comer y te oriento desde donde estás.",
+    "Desde ahí tienes varias opciones. ¿Quieres empezar por una falla cercana o prefieres que te haga una ruta completa de tu zona?"
+  ],
+  "ayuda": [
+    "Soy Fallerito y puedo hacer esto 🔥\n  • Recomendar fallas cercanas\n  • Encontrar mascletàs y fuegos\n  • Crear rutas personalizadas\n  • Explicar monumentos y ninots\n  • Sugerir comida típica valenciana\n  • Informarte sobre horarios y eventos\n\n¿Por dónde empezamos?",
+    "Pregúntame cosas como: '¿Qué falla veo ahora?', '¿A qué hora es la mascletà?', 'Hazme una ruta de 1 hora' o 'Explícame este monumento'. Estoy para lo que necesites 🔥",
+    "Mis especialidades: fallas, mascletàs, rutas, comida, horarios de eventos y explicaciones de monumentos. ¿Qué necesitas primero?"
+  ],
+  "marketplace_app": [
+    "En Falles360, el Marketplace concentra restaurantes, cupones QR, productos, experiencias y sponsors cerca de tu ruta. Entra en Marketplace, usa los filtros y abre una ficha para guardar o canjear la oferta.",
+    "Si buscas comer, descuentos o productos falleros, ve a Marketplace. Ahi puedes buscar por restaurante, cupon, tienda, experiencia o sponsor y usar los cupones desde la propia app.",
+    "Los cupones del Marketplace se guardan y se muestran en la ficha del negocio. Si estas en ruta, lo mas rapido es usar el filtro Cerca de mi."
+  ],
+  "pasaporte_app": [
+    "El Pasaporte Fallero guarda tus visitas, progreso, insignias y nivel. Abre Perfil para ver lo completado y usa el mapa para registrar nuevas fallas visitadas.",
+    "Las insignias se desbloquean al visitar fallas, completar rutas o consumir contenido de la app. Es la parte de gamificacion de Falles360.",
+    "Para subir de nivel, visita fallas desde el mapa, guarda favoritas y completa acciones del Pasaporte. El progreso aparece en tu perfil."
+  ],
+  "avisos_app": [
+    "Los avisos publicados desde el panel aparecen primero como popup. Cuando los cierras, quedan arriba como indicador para que sepas que hay un aviso activo.",
+    "Si cierras un aviso, no se pierde: queda en el indicador superior. Toca ese indicador para volver a verlo.",
+    "Los administradores pueden publicar avisos desde el panel. La app los carga y los muestra a los usuarios como notificaciones visibles."
+  ],
+  "admin_panel_app": [
+    "El panel admin sirve para gestionar comisiones, eventos, galeria, sponsors, avisos, usuarios y aprobaciones. Desde Avisos puedes publicar mensajes visibles en la app.",
+    "Para publicar contenido, entra en el modulo correspondiente, crea o edita el registro y revisa aprobaciones si hace falta. Los avisos se gestionan desde la seccion Avisos.",
+    "Como admin puedes revisar estadisticas, aprobar contenido, lanzar avisos, gestionar Telegram y mantener la informacion de Falles360 actualizada."
+  ],
+  "telegram_app": [
+    "Telegram se conecta desde el perfil. Al vincularlo, puedes recibir avisos, novedades y pruebas de notificacion fuera de la app.",
+    "Si Telegram esta pendiente, abre el enlace de vinculacion y pulsa Start en el bot. Despues vuelve a la app y comprueba el estado.",
+    "Los admins pueden enviar avisos al canal o a usuarios vinculados. Para usuarios normales, Telegram sirve para recibir notificaciones importantes."
+  ],
+  "despedida": [
+    "¡Hasta luego! Espero haberte ayudado. Visca les Falles 🔥",
+    "¡Nos vemos! A disfrutar de la mejor fiesta del mundo 🔥",
+    "¡Cuídate! Si necesitas más info, aquí estará Fallerito. Visca Valencia 🔥",
+    "¡Hasta la próxima! Que la pólvora te llene de alegría 🎆",
+    "De nada, tío. Que te lo pases de cine en las Fallas 🔥"
+  ],
+  "transporte": [
+    "Para moverte por las Fallas lo mejor es ir a pie por el centro. El metro llega hasta Ayuntamiento (líneas 3 y 5) y Xàtiva 🚇",
+    "En Fallas el centro está muy saturado de gente. Lo mejor es aparcar lejos y entrar caminando o en metro. La EMT también refuerza las líneas principales.",
+    "Si vienes de fuera: llega en metro hasta Colón o Xàtiva y desde ahí todo a pie. Mucho más cómodo que el coche. ¿Dónde sales?",
+    "Para moverte rápido entre barrios: Valenbisi (bicicletas) o metro. A pie es lo mejor si te quedas en el centro. ¿Cuál es tu punto de partida?"
+  ],
+  "informacion_general": [
+    "Las Fallas son una fiesta declarada Patrimonio Inmaterial de la Humanidad por la UNESCO 🌍 Se celebran en Valencia cada mes de marzo y consisten en plantar monumentos artísticos que al final se queman en la cremà.",
+    "Las Fallas duran oficialmente del 15 al 19 de marzo, aunque la semana previa ya hay ambiente y actos. El punto culminante es la cremà en la noche del 19.",
+    "Cada falla es un monumento de cartón piedra lleno de ninots (figuras) que representan críticas sociales y políticas con humor. Al final se queman todos excepto el ninot indultat, que se salva por votación popular.",
+    "La mascletà es un espectáculo pirotécnico diario de unos 5 minutos que más que verse, se escucha y se siente. La principal es en la Plaza del Ayuntamiento cada día a las 14:00 h.",
+    "En Valencia hay más de 700 fallas plantadas por toda la ciudad. Cada barrio tiene su propia comisión fallera con su monumento y sus festivos. ¿Quieres saber más sobre alguna parte concreta?"
+  ],
+  "desconocido": [
+    "No te he pillado del todo, ¡perdona! Puedo ayudarte con fallas, mascletàs, rutas, comida y eventos. Prueba a preguntarme algo así 🔥",
+    "Mmm, no estoy seguro de lo que necesitas. ¿Quieres que te recomiende una falla, te busque una mascletà o te prepare una ruta?",
+    "No te he entendido bien, pero estoy aquí para ayudarte. Pregúntame: '¿Qué falla veo?', '¿Dónde como?' o 'Hazme una ruta rápida' 🔥",
+    "No lo he captado, sorry 😅 Escríbeme de otra forma o prueba con: fallas, mascletà, ruta, comida o eventos."
+  ]
+}
